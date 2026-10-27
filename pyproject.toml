@@ -1,3 +1,4 @@
+
 [project]
 name = "blank-app-template"
 version = "0.1.0"
@@ -9,6 +10,7 @@ dependencies = [
     "pandas>=3.0.3",
     "plotly>=7.1.0",
     "streamlit>=1.61.1",
+    "supabase",
 ]
 
 [tool.uv]
