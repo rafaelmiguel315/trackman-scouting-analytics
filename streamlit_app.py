@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from supabase_store import authenticate, import_csv, load_all
 
 st.set_page_config(
     page_title="TrackMan Scouting Analytics",
@@ -10,6 +11,7 @@ st.set_page_config(
     layout="wide"
 )
 
+sb = authenticate()
 st.title("⚾ TrackMan Scouting Analytics")
 st.caption("International Scouting | Video & Data")
 
@@ -18,7 +20,7 @@ st.caption("International Scouting | Video & Data")
 # ---------------------------
 
 if "trackman_data" not in st.session_state:
-    st.session_state.trackman_data = None
+    st.session_state.trackman_data = load_all(sb)
 
 PITCH_METRICS = {
     "RelSpeed": ("Velocity", "mph"),
@@ -605,34 +607,30 @@ if page == "CSV Upload":
 
     if uploaded is not None:
         try:
-            data = pd.read_csv(
-                uploaded,
-                low_memory=False
-            )
-
-            data.columns = (
-                data.columns.astype(str).str.strip()
-            )
-
-            st.session_state.trackman_data = data
-
-            st.success(
-                f"CSV loaded: {len(data):,} records"
-            )
-
-            st.dataframe(
-                data.head(20),
-                use_container_width=True
-            )
-
+            file_bytes = uploaded.getvalue()
+            # The file uploader persists across reruns; hash prevents repeated writes.
+            import hashlib
+            fingerprint = hashlib.sha256(file_bytes).hexdigest()
+            if st.session_state.get('last_upload_attempt') != fingerprint:
+                status, count = import_csv(sb, file_bytes, uploaded.name)
+                st.session_state.last_upload_attempt = fingerprint
+                st.session_state.trackman_data = load_all(sb)
+                if status == 'duplicate':
+                    st.info('Este CSV ya existe en Supabase. No se duplicaron los datos.')
+                else:
+                    st.success(f'CSV guardado automáticamente: {count:,} lanzamientos.')
+            else:
+                st.info('Archivo procesado. Selecciona otro CSV para continuar.')
+            if st.session_state.trackman_data is not None:
+                st.dataframe(st.session_state.trackman_data.tail(20), use_container_width=True)
         except Exception as error:
-            st.error(f"CSV error: {error}")
+            st.error(f'No se pudo importar el CSV: {error}')
 
 df = st.session_state.trackman_data
 
 if page != "CSV Upload" and df is None:
     st.info(
-        "Go to CSV Upload and load a TrackMan file."
+        "No hay lanzamientos guardados todavía. Ve a CSV Upload para importar un archivo."
     )
     st.stop()
 
