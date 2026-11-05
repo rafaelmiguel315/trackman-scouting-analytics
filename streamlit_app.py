@@ -616,12 +616,13 @@ def metric_cards(items, role):
             )
 
             if avg is None:
-                c.caption("No benchmark")
+                c.caption("Reference unavailable for this metric and level")
             else:
                 c.markdown(
-                    f'<span style="color:{color};'
-                    f'font-weight:700">{label}</span>'
-                    f" · {benchmark_level} avg: {avg:.1f}",
+                    f'<div style="border-left:5px solid {color};'
+                    f'background:{color}18;padding:9px 11px;border-radius:6px">'
+                    f'<strong style="color:{color}">{label}</strong>'
+                    f' · {benchmark_level} reference: {avg:.1f}</div>',
                     unsafe_allow_html=True,
                 )
 
