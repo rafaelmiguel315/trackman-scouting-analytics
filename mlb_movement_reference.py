@@ -5,23 +5,46 @@ weighted by pitches thrown. Missing seasons are never fabricated.
 """
 from io import StringIO
 from urllib.request import Request, urlopen
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd
 
-URL = "https://baseballsavant.mlb.com/leaderboard/pitch-movement?year={year}&csv=true"
+URL = "https://baseballsavant.mlb.com/leaderboard/pitch-movement?year={year}&pitch_type={pitch_type}&min=0&csv=true"
+PITCH_TYPES = ("FF","SI","FC","SL","ST","CU","KC","CH","FS")
 ALIASES = {"Four-Seam Fastball":"FF","Sinker":"SI","Cutter":"FC","Slider":"SL","Sweeper":"ST","Curveball":"CU","Knuckle Curve":"KC","Changeup":"CH","Splitter":"FS","Forkball":"FO"}
 CODE_NAMES = {"FF":"Four-Seam Fastball","SI":"Sinker","FC":"Cutter","SL":"Slider","ST":"Sweeper","CU":"Curveball","KC":"Knuckle Curve","CH":"Changeup","FS":"Splitter","FO":"Forkball"}
 FIELDS = {"RelSpeed":"avg_speed","InducedVertBreak":"pitcher_break_z_induced","HorzBreak":"pitcher_break_x"}
 
-def retrieve(year):
-    request = Request(URL.format(year=int(year)), headers={"User-Agent":"Mozilla/5.0 TrackManScoutingAnalytics/1.0"})
-    with urlopen(request, timeout=18) as response:
-        data = response.read().decode("utf-8-sig")
-    frame = pd.read_csv(StringIO(data))
-    needed = {"pitch_type","pitch_hand","pitches_thrown","avg_speed","pitcher_break_z_induced","pitcher_break_x"}
-    if not needed.issubset(frame.columns):
-        raise ValueError("Unexpected Baseball Savant CSV columns: " + ",".join(sorted(needed-set(frame.columns))))
+def _fetch_pitch(year, pitch_type):
+    request = Request(URL.format(year=int(year), pitch_type=pitch_type),
+                      headers={"User-Agent":"Mozilla/5.0 (compatible; scouting-analytics/1.0)"})
+    with urlopen(request, timeout=20) as response:
+        body = response.read().decode("utf-8-sig")
+    frame = pd.read_csv(StringIO(body))
+    required = {"pitch_type","pitch_hand","pitches_thrown","avg_speed",
+                "pitcher_break_z_induced","pitcher_break_x"}
+    if not required.issubset(frame.columns):
+        raise ValueError(f"{year} {pitch_type}: unexpected MLB CSV schema: {sorted(required-set(frame.columns))}")
+    frame = frame[frame["pitch_type"].astype(str).str.upper().eq(pitch_type)].copy()
     frame["season"] = int(year)
     return frame
+
+def retrieve(year):
+    """Download each pitch category; the leaderboard defaults to four-seam only."""
+    frames, failures = [], []
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        futures = {pool.submit(_fetch_pitch,year,code):code for code in PITCH_TYPES}
+        for future in as_completed(futures):
+            try:
+                frame = future.result()
+                if not frame.empty:
+                    frames.append(frame)
+            except Exception as exc:
+                failures.append(f"{futures[future]}: {type(exc).__name__}")
+    if not frames:
+        raise RuntimeError(f"No verified Baseball Savant movement CSVs for {year}: {', '.join(failures)}")
+    result = pd.concat(frames, ignore_index=True)
+    result.attrs["missing_pitch_types"] = failures
+    return result
 
 def pooled(frames, pitch_name, hand=None):
     if not frames:
