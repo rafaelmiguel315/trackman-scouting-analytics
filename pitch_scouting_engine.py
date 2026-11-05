@@ -17,12 +17,14 @@ def name(code):
 def pitch_rows(df):
     if "TaggedPitchType" not in df:return []
     out=[]
-    for tag,group in df.groupby("TaggedPitchType",dropna=True):
+    prepared=df.copy()
+    prepared["_normalized_pitch"]=prepared["TaggedPitchType"].map(name)
+    for tag,group in prepared.groupby("_normalized_pitch",dropna=True):
         if not str(tag).strip() or str(tag).strip().lower() in ("nan","none","unknown"):continue
         vals={key:mean(group,key) for key,_,_ in METRICS}
         calls=group["PitchCall"].fillna("").astype(str).str.lower().str.replace(r"[^a-z]","",regex=True) if "PitchCall" in group else pd.Series([],dtype=str)
-        swing=calls.isin(["strikeswinging","foulball","foulballnotfieldable","foultip","inplay","foulbunt","strikebunt"])
-        whiff=calls.isin(["strikeswinging","foultip"])
+        swing=calls.isin(["strikeswinging","swingingstrike","swingingstrikewildpitch","swingingstrikeblocked","foulball","foul","foulballfieldable","foulballnotfieldable","foultip","inplay","ballinplay","inplayout","inplayrun","inplaynoout","foulbunt","strikebunt"])
+        whiff=calls.isin(["strikeswinging","swingingstrike","swingingstrikewildpitch","swingingstrikeblocked"])
         ns=int(swing.sum()); nw=int(whiff.sum())
         out.append({"name":name(tag),"n":len(group),"v":vals,"swings":ns,"whiffs":nw,"whiff_pct":100*nw/ns if ns else None})
     return sorted(out,key=lambda p:-p["n"])
@@ -31,7 +33,7 @@ def summaries(df):
     if not rows:return [],[]
     primary=next((p for p in rows if p["name"] in ("Four-Seam Fastball","Sinker")),rows[0])
     v=primary["v"]
-    overall=[f"The selected sample contains {len(df):,} pitches and {len(rows)} tagged pitch types. The primary fastball selected for comparison is {primary['name']} ({primary['n']} pitches), averaging {display(v['RelSpeed'])} mph, {display(v['InducedVertBreak'])} inches IVB and {display(v['HorzBreak'])} inches HB."]
+    overall=[f"The selected sample contains {len(df):,} pitches and {len(rows)} tagged pitch types. The comparison anchor is {primary['name']} ({primary['n']} pitches), averaging {display(v['RelSpeed'])} mph, {display(v['InducedVertBreak'])} inches IVB and {display(v['HorzBreak'])} inches HB."]
     for p in rows:
         if p is primary:continue
         q=p["v"];dif=[]
