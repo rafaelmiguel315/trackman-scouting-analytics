@@ -1,0 +1,14 @@
+
+season,level,role,metric,average,tolerance,direction,source
+2025,MLB,Pitcher,K %,22.23,2.0,higher,2025 league totals
+2025,MLB,Pitcher,BB %,8.41,1.0,lower,2025 league totals
+2025,Triple-A,Pitcher,K %,22.64,2.0,higher,2025 league totals
+2025,Triple-A,Pitcher,BB %,10.94,1.0,lower,2025 league totals
+2025,Double-A,Pitcher,K %,23.49,2.0,higher,2025 league totals
+2025,Double-A,Pitcher,BB %,10.35,1.0,lower,2025 league totals
+2025,Single-A,Pitcher,K %,23.51,2.0,higher,2025 league totals
+2025,Single-A,Pitcher,BB %,11.88,1.0,lower,2025 league totals
+2025,Rookie,Pitcher,K %,23.68,2.0,higher,2025 league totals
+2025,Rookie,Pitcher,BB %,12.19,1.0,lower,2025 league totals
+2025,DSL,Pitcher,K %,20.40,2.0,higher,2025 league totals
+2025,DSL,Pitcher,BB %,14.69,1.0,lower,2025 league totals
