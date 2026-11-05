@@ -169,6 +169,51 @@ BALL_CALLS = {
 }
 
 
+ARM_SLOTS = ["Not specified", "Overhead", "High Three-Quarter", "Three-Quarter", "Low Three-Quarter", "Sidearm"]
+
+
+def select_arm_slot(player, key):
+    """Editable per-player slot retained across reruns in the current browser session."""
+    slot_map = st.session_state.setdefault("pitcher_arm_slots", {})
+    current = slot_map.get(str(player), ARM_SLOTS[0])
+    if current not in ARM_SLOTS:
+        current = ARM_SLOTS[0]
+    selected = st.selectbox(
+        "Pitcher Arm Slot",
+        ARM_SLOTS,
+        index=ARM_SLOTS.index(current),
+        key=key,
+        help="Choose the pitcher's observed arm slot. Used for contextual scouting notes, not an invented MLB grade.",
+    )
+    slot_map[str(player)] = selected
+    st.caption("Arm slot changes expected movement shape. Quality grades require verified pitch-type and arm-slot comparisons.")
+    return selected
+
+
+def fastball_slot_assessment(pitch, slot):
+    """Contextual fastball assessment, deliberately avoiding fabricated quality cutoffs."""
+    if slot == "Not specified":
+        return "Select an arm slot to contextualize fastball shape."
+    name = str(pitch.get("name", "")).lower()
+    if not any(x in name for x in ("fastball", "four-seam", "four seam", "sinker", "cutter")):
+        return "Arm-slot context recorded; fastball quality applies only to fastball types."
+    v = pitch.get("v", {})
+    ivb, hb, velo = (v.get("InducedVertBreak"), v.get("HorzBreak"), v.get("RelSpeed"))
+    if ivb is None or hb is None:
+        return f"{slot}: insufficient movement data to assess fastball shape."
+    text = f"{slot} delivery · IVB {ivb:.1f} in · HB {hb:+.1f} in"
+    if velo is not None:
+        text += f" · {velo:.1f} mph"
+    text += ". "
+    if slot in ("Overhead", "High Three-Quarter"):
+        text += "Check vertical carry against comparable high-slot fastballs."
+    elif slot == "Three-Quarter":
+        text += "Evaluate vertical carry and arm-side run together."
+    else:
+        text += "Lower slots can produce more lateral movement and less IVB; do not apply high-slot IVB targets."
+    return text + " Quality: not graded without a verified matching reference."
+
+
 # ==================================================
 # DATA HELPERS
 # ==================================================
@@ -1560,6 +1605,7 @@ elif page == "Pitcher Analytics":
     )
 
     st.subheader(pitcher)
+    selected_arm_slot = select_arm_slot(pitcher, "analytics_arm_slot")
 
     pitching_headers(
         d,
@@ -1620,6 +1666,7 @@ elif page == "Pitcher Analytics":
         from scouting_quick_summary import overall_summary, shape_summary
         st.markdown("**Overall Summary**")
         st.info(overall_summary(arsenal))
+        st.caption(f"Arm slot: {selected_arm_slot}")
 
         mlb_frames, mlb_errors = mlb_reference_seasons()
         st.caption("MLB Statcast 2025–2026 | pitch-count-weighted reference by pitch type. Velocity colors describe velocity only, not overall pitch quality.")
@@ -1628,6 +1675,7 @@ elif page == "Pitcher Analytics":
         st.caption("Pitch colors identify pitch types; they are not performance grades. Red = good, yellow = average, blue = poor only for verified comparable benchmarks.")
         for p in arsenal:
             vals = p["v"]
+            st.caption(fastball_slot_assessment(p, selected_arm_slot))
             label = escape(p["name"])
             pitch_color = PITCH_COLORS.get(p["name"], PITCH_COLORS.get(p["name"].replace("Four-Seam Fastball", "Fastball"), "#64748b"))
             st.markdown(f'<div style="border-left:6px solid {pitch_color};padding:7px 12px;margin:9px 0;background:rgba(128,128,128,0.08);border-radius:6px"><b>{label}</b> · {p["n"]} pitches</div>', unsafe_allow_html=True)
@@ -1750,6 +1798,12 @@ elif page == "Player Profiles":
 
     if role == "Pitcher":
         st.subheader("Pitching Profile")
+        profile_arm_slot = select_arm_slot(player, "profile_arm_slot")
+        from pitch_scouting_engine import pitch_rows
+        profile_pitches = pitch_rows(d)
+        for profile_pitch in profile_pitches:
+            if any(x in profile_pitch["name"].lower() for x in ("fastball", "four-seam", "sinker", "cutter")):
+                st.caption(fastball_slot_assessment(profile_pitch, profile_arm_slot))
 
         pitching_headers(
             d,
