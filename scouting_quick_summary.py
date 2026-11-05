@@ -25,7 +25,7 @@ def shape_summary(p, all_pitches):
         if ivb <= 12 and abs(hb) >= 8:
             vertical += " Low ride for a four-seam profile; check arm slot and velocity."
             horizontal += " Noticeable arm-side movement; compare with sinker/run profile."
-        comparisons=[]
+    comparisons=[]
     for other in all_pitches:
         if other is p or other["name"]==name:
             continue
