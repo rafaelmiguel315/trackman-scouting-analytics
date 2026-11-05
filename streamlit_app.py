@@ -642,19 +642,19 @@ def metric_cards(items, role):
                 number = None
 
             label, color, avg = visual_grade(
+                number,
                 name,
                 role,
-                number,
             )
 
             if avg is None:
-                c.caption("Reference unavailable for this metric and level")
+                c.caption("Measured · no verified comparison")
             else:
                 c.markdown(
                     f'<div style="border-left:5px solid {color};'
                     f'background:{color}18;padding:9px 11px;border-radius:6px">'
                     f'<strong style="color:{color}">{label}</strong>'
-                    f' · {benchmark_level} reference: {avg:.1f}</div>',
+                    f' · {"SAMPLE" if demo_mode and "DEMO" in label else benchmark_level} reference: {avg:.1f}</div>',
                     unsafe_allow_html=True,
                 )
 
