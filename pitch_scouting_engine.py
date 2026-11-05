@@ -71,6 +71,6 @@ def summaries(df):
             if p["swings"]<20:
                 desc+="Small swing sample (fewer than 20); effectiveness is not reliably established. "
         else:desc+="Observed Whiff%: unavailable (no recorded swings). "
-        desc+="MLB/MiLB adjusted grade: insufficient validated reference data."
+        desc+="Pitch effectiveness assessment: descriptive only; a validated pitch-type/level comparison and a sufficiently large outcome sample are required for a definitive grade."
         detail.append((p["name"],desc))
     return overall,detail
