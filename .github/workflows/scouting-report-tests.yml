@@ -15,7 +15,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install report dependencies
-        run: pip install pandas reportlab
+        run: pip install pandas reportlab pypdf
       - name: Compile Python sources
         run: python -m compileall -q streamlit_app.py pitch_scouting_engine.py supabase_store.py
       - name: Test scouting summaries
