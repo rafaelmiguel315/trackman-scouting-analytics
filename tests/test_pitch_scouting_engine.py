@@ -26,6 +26,18 @@ class ScoutingSummaryTests(unittest.TestCase):
         self.assertIn("N/A",detail[0][1])
         self.assertIn("unavailable",detail[0][1])
         self.assertIn("insufficient validated reference data",detail[0][1])
+    def test_pitch_aliases_are_combined(self):
+        df=pd.DataFrame({"TaggedPitchType":["FF","FourSeamFastBall","Four-Seam"],"PitchCall":["StrikeSwinging","BallCalled","FoulBall"]})
+        rows=pitch_rows(df)
+        self.assertEqual(len(rows),1)
+        self.assertEqual(rows[0]["n"],3)
+        self.assertEqual(rows[0]["name"],"Four-Seam Fastball")
+    def test_foul_tip_is_contact_not_whiff(self):
+        df=pd.DataFrame({"TaggedPitchType":["SL","SL"],"PitchCall":["FoulTip","StrikeSwinging"]})
+        rows=pitch_rows(df)
+        self.assertEqual(rows[0]["swings"],2)
+        self.assertEqual(rows[0]["whiffs"],1)
+        self.assertEqual(rows[0]["whiff_pct"],50.0)
     def test_no_pitches(self):
         self.assertEqual(summaries(pd.DataFrame()),([],[]))
 if __name__=="__main__":
