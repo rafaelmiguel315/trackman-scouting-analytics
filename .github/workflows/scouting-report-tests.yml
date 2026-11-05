@@ -18,6 +18,6 @@ jobs:
       - name: Install report dependencies
         run: pip install pandas reportlab pypdf
       - name: Compile Python sources
-        run: python -m compileall -q streamlit_app.py pitch_scouting_engine.py supabase_store.py
+        run: python -m compileall -q streamlit_app.py pitch_scouting_engine.py mlb_movement_reference.py supabase_store.py
       - name: Test scouting summaries
         run: python -m unittest discover -s tests -p 'test_*.py' -v
