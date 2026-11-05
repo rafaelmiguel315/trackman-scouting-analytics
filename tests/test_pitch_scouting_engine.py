@@ -38,6 +38,23 @@ class ScoutingSummaryTests(unittest.TestCase):
         self.assertEqual(rows[0]["swings"],2)
         self.assertEqual(rows[0]["whiffs"],1)
         self.assertEqual(rows[0]["whiff_pct"],50.0)
+    def test_real_trackman_export_column_patterns(self):
+        # Matches observed field names, not actual player measurements.
+        df=pd.DataFrame({
+            "TaggedPitchType":["Fastball","Slider","ChangeUp"],
+            "PitcherThrows":["Right"]*3,
+            "PitchCall":["StrikeCalled","FoulBall","BallCalled"],
+            "RelSpeed":[80.0,72.0,74.0],
+            "InducedVertBreak":[15.0,2.0,8.0],
+            "HorzBreak":[10.0,-3.0,14.0],
+            "SpinAxis3dSpinEfficiency":[None,None,None],
+            "VertApprAngle":[-5.0,-6.0,-5.5],
+        })
+        overall,detail=summaries(df)
+        self.assertEqual(len(detail),3)
+        self.assertTrue(any(name=="Four-Seam Fastball" for name,_ in detail))
+        self.assertTrue(any(name=="Changeup" for name,_ in detail))
+        self.assertIn("Spin Efficiency: N/A",detail[0][1])
     def test_no_pitches(self):
         self.assertEqual(summaries(pd.DataFrame()),([],[]))
 if __name__=="__main__":
