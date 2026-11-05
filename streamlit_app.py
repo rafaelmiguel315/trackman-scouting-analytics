@@ -1246,7 +1246,7 @@ def download_report(
 
 st.sidebar.header("Analysis Settings")
 
-demo_mode = st.sidebar.toggle("Preview performance colors (DEMO)", value=False, help="Illustrative only: NOT MLB/MiLB statistics or scouting grades.")
+demo_mode = st.sidebar.toggle("Preview performance colors (DEMO)", value=True, help="Illustrative only: NOT MLB/MiLB statistics or scouting grades.")
 
 benchmark_level = st.sidebar.selectbox(
     "Benchmark Level",
