@@ -2,6 +2,7 @@ name: Scouting Report Tests
 on:
   push:
     branches:
+      - main
       - feature/scouting-pdf-movement-summary-2026
   pull_request:
     branches:
