@@ -1421,6 +1421,18 @@ def pdf_report(player, role, data, bottom, top):
         ),
     ])
 
+    if role == "Pitcher":
+        from pitch_scouting_engine import summaries
+        overall, details = summaries(data)
+        if overall:
+            elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Pitching Assessment | Arsenal Separation &amp; Deception", styles["Heading2"])])
+            for paragraph in overall:
+                elements.extend([Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 7)])
+            elements.append(Paragraph("Pitch-by-Pitch Movement Analysis", styles["Heading2"]))
+            for pitch_name, paragraph in details:
+                elements.extend([Paragraph(escape(pitch_name), styles["Heading3"]), Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 8)])
+            elements.append(Paragraph("Reference scope: player averages use selected TrackMan pitches. MLB/MiLB 2025-2026 adjusted percentiles are withheld until a matched, validated reference dataset is installed. No inferred deception or effectiveness grade is presented as observed fact.", styles["Normal"]))
+
     doc.build(elements)
 
     return buffer.getvalue()
