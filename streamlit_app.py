@@ -526,49 +526,35 @@ def benchmark_table():
 
 
 def reference(metric, role):
+    """Combine only available 2025/2026 league rows; never invent missing seasons."""
     table = benchmark_table()
-
     if table.empty:
         return None
-
+    years = ["2025", "2026"] if benchmark_season_mode == "2025 + 2026 (available data)" else [str(benchmark_season)]
     matches = table.loc[
         (table["level"].astype(str) == benchmark_level)
-        & (
-            table["season"].astype(str)
-            == str(benchmark_season)
-        )
-        & (
-            table["role"].astype(str).str.lower()
-            == role.lower()
-        )
+        & (table["season"].astype(str).isin(years))
+        & (table["role"].astype(str).str.lower() == role.lower())
         & (table["metric"].astype(str) == metric)
-    ]
-
+    ].copy()
     if matches.empty:
         return None
-
-    row = matches.iloc[0]
-
-    try:
-        avg = float(row["average"])
-        tolerance = abs(float(row["tolerance"]))
-        direction = str(
-            row["direction"]
-        ).lower()
-
-        source = str(row["source"]).strip()
-
-        if (
-            direction not in {"higher", "lower"}
-            or not source
-            or source.lower() == "nan"
-        ):
-            return None
-
-        return avg, tolerance, direction, source
-
-    except (TypeError, ValueError):
+    matches["average"] = pd.to_numeric(matches["average"], errors="coerce")
+    matches["tolerance"] = pd.to_numeric(matches["tolerance"], errors="coerce")
+    matches = matches.dropna(subset=["average", "tolerance"])
+    matches = matches[
+        matches["direction"].astype(str).str.lower().isin(["higher", "lower"])
+        & matches["source"].fillna("").astype(str).str.strip().ne("")
+    ]
+    if matches.empty or matches["direction"].astype(str).str.lower().nunique() != 1:
         return None
+    # Seasonal averages are combined equally: CSV lacks denominators needed
+    # for a pooled player/pitch-weighted mean.
+    avg = float(matches["average"].mean())
+    tolerance = float(matches["tolerance"].abs().mean())
+    direction = str(matches.iloc[0]["direction"]).lower()
+    source = "; ".join(sorted(set(matches["source"].astype(str))))
+    return avg, tolerance, direction, source
 
 
 def rating(metric, role, value):
@@ -1143,7 +1129,7 @@ def pdf_report(player, role, data, bottom, top):
             f"{escape(str(player))} | "
             f"{escape(role)} | "
             f"{escape(benchmark_level)} "
-            f"{benchmark_season}",
+            f"{benchmark_season_mode if benchmark_season_mode != 'Single season' else benchmark_season}",
             styles["Heading2"],
         ),
         Paragraph(
@@ -1547,12 +1533,27 @@ benchmark_level = st.sidebar.selectbox(
     LEVELS,
 )
 
-benchmark_season = st.sidebar.number_input(
-    "Benchmark Season",
-    min_value=2020,
-    max_value=2035,
-    value=2026,
-    step=1,
+benchmark_season_mode = st.sidebar.selectbox(
+    "Benchmark Period",
+    ["2025 + 2026 (available data)", "Single season"],
+)
+benchmark_season = st.sidebar.selectbox(
+    "Single Benchmark Season",
+    [2025, 2026],
+    index=0,
+    disabled=benchmark_season_mode != "Single season",
+)
+available_years = sorted(set(
+    benchmark_table().loc[
+        (benchmark_table()["level"].astype(str) == benchmark_level)
+        & (benchmark_table()["season"].astype(str).isin(["2025", "2026"])),
+        "season",
+    ].astype(str)
+)) if not benchmark_table().empty else []
+st.sidebar.caption(
+    "Reference seasons available for this level: "
+    + (", ".join(available_years) if available_years else "none")
+    + ". Combined mode averages available seasonal reference values equally; missing seasons are never estimated."
 )
 
 if benchmark_table().empty:
