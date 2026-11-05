@@ -25,7 +25,7 @@ class ScoutingSummaryTests(unittest.TestCase):
         self.assertEqual(len(detail),1)
         self.assertIn("N/A",detail[0][1])
         self.assertIn("unavailable",detail[0][1])
-        self.assertIn("insufficient validated reference data",detail[0][1])
+        self.assertIn("a validated pitch-type/level comparison",detail[0][1])
     def test_pitch_aliases_are_combined(self):
         df=pd.DataFrame({"TaggedPitchType":["FF","FourSeamFastBall","Four-Seam"],"PitchCall":["StrikeSwinging","BallCalled","FoulBall"]})
         rows=pitch_rows(df)
