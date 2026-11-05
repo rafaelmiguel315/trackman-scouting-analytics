@@ -37,7 +37,10 @@ def mlb_reference_seasons():
     frames, errors = [], []
     for year in (2025, 2026):
         try:
-            frames.append(retrieve_mlb(year))
+            frame = retrieve_mlb(year)
+            frames.append(frame)
+            if frame.attrs.get("missing_pitch_types"):
+                errors.append(f"{year} missing pitch types: {', '.join(frame.attrs['missing_pitch_types'])}")
         except Exception as exc:
             errors.append(f"{year}: {type(exc).__name__}")
     return frames, errors
