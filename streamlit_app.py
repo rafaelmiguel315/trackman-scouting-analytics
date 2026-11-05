@@ -1559,8 +1559,19 @@ elif page == "Pitcher Analytics":
                 grade, grade_color = velocity_grade(vals["RelSpeed"], ref["RelSpeed"])
                 st.markdown(f'<div style="padding:9px 12px;background:{grade_color}20;border-left:6px solid {grade_color};border-radius:5px"><b style="color:{grade_color}">{grade}</b> · Player {vals["RelSpeed"]:.1f} mph / MLB {ref["RelSpeed"]:.1f} mph · {", ".join(map(str,ref["seasons"]))} · {ref["RelSpeed_n"]:,} MLB pitches</div>', unsafe_allow_html=True)
                 st.caption("MLB IVB and horizontal movement: " + (f'{ref.get("InducedVertBreak",float("nan")):.1f} / {ref.get("HorzBreak",float("nan")):.1f} inches. Movement sign conventions must be verified before grading shape.'))
+            elif demo_mode and vals["RelSpeed"] is not None:
+                demo_velocities = {"Four-Seam Fastball": 93.5, "Sinker": 93, "Cutter": 89,
+                                   "Slider": 85, "Sweeper": 82, "Curveball": 79,
+                                   "Changeup": 85, "Splitter": 86}
+                demo_avg = demo_velocities.get(p["name"])
+                if demo_avg is not None:
+                    grade, grade_color = velocity_grade(vals["RelSpeed"], demo_avg)
+                    st.markdown(f'<div style="padding:10px;border-left:6px solid {grade_color};background:{grade_color}20"><b style="color:{grade_color}">{grade} · DEMO ONLY</b> · Player {vals["RelSpeed"]:.1f} mph / sample {demo_avg:.1f} mph</div>', unsafe_allow_html=True)
+                    st.caption("Illustrative reference only — NOT actual MLB or MiLB averages.")
+                else:
+                    st.caption("No demo example for this pitch type.")
             else:
-                st.caption("MLB comparison unavailable for this pitch type / handedness.")
+                st.caption("MLB comparison unavailable. Turn on DEMO in the sidebar to preview the colors.")
             cols = st.columns(5)
             for c, field, title, unit in zip(cols, ["RelSpeed","InducedVertBreak","HorzBreak","SpinRate","VertApprAngle"], ["Velocity","IVB","HB","Spin","VAA"], ["mph","in","in","rpm","°"]):
                 val = vals[field]
