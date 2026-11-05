@@ -9,13 +9,16 @@ def mean(df,key):
     return float(s.mean()) if len(s) else None
 def display(n,dec=1):
     return "N/A" if n is None else f"{n:.{dec}f}"
+ALIASES={"FOURSEAMFASTBALL":"FF","FOURSEAM":"FF","FASTBALL":"FF","TWOSEAM":"SI","TWOSEAMFASTBALL":"SI","SINKER":"SI","CUTTER":"FC","SLIDER":"SL","SWEEPER":"ST","CURVEBALL":"CB","KNUCKLECURVE":"KC","CHANGEUP":"CH","SPLITTER":"FS"}
 def name(code):
-    return NAMES.get(str(code).strip().upper(),str(code))
+    raw=str(code).strip()
+    key="".join(c for c in raw.upper() if c.isalnum())
+    return NAMES.get(ALIASES.get(key,key),raw)
 def pitch_rows(df):
     if "TaggedPitchType" not in df:return []
     out=[]
     for tag,group in df.groupby("TaggedPitchType",dropna=True):
-        if not str(tag).strip():continue
+        if not str(tag).strip() or str(tag).strip().lower() in ("nan","none","unknown"):continue
         vals={key:mean(group,key) for key,_,_ in METRICS}
         calls=group["PitchCall"].fillna("").astype(str).str.lower().str.replace(r"[^a-z]","",regex=True) if "PitchCall" in group else pd.Series([],dtype=str)
         swing=calls.isin(["strikeswinging","foulball","foulballnotfieldable","foultip","inplay","foulbunt","strikebunt"])
