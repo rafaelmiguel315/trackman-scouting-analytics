@@ -10,6 +10,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from supabase_store import authenticate, import_csv, load_all
+from mlb_movement_reference import retrieve as retrieve_mlb, pooled as pooled_mlb, velocity_grade
 
 
 # ==================================================
@@ -29,6 +30,17 @@ st.caption("International Scouting | Video & Data")
 
 if "trackman_data" not in st.session_state:
     st.session_state.trackman_data = load_all(sb)
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def mlb_reference_seasons():
+    frames, errors = [], []
+    for year in (2025, 2026):
+        try:
+            frames.append(retrieve_mlb(year))
+        except Exception as exc:
+            errors.append(f"{year}: {type(exc).__name__}")
+    return frames, errors
 
 
 # ==================================================
@@ -1826,12 +1838,25 @@ elif page == "Pitcher Analytics":
     arsenal = pitch_rows(report_data)
     if arsenal:
         st.subheader("Full Arsenal | Pitch-by-Pitch")
+        mlb_frames, mlb_errors = mlb_reference_seasons()
+        st.caption("MLB Statcast 2025–2026 | pitch-count-weighted reference by pitch type. Velocity colors describe velocity only, not overall pitch quality.")
+        if mlb_errors:
+            st.warning("MLB reference download unavailable for: " + ", ".join(mlb_errors) + ". Unavailable years are not estimated.")
         st.caption("Pitch colors identify pitch types; they are not performance grades. Red = good, yellow = average, blue = poor only for verified comparable benchmarks.")
         for p in arsenal:
             vals = p["v"]
             label = escape(p["name"])
             pitch_color = PITCH_COLORS.get(p["name"], PITCH_COLORS.get(p["name"].replace("Four-Seam Fastball", "Fastball"), "#64748b"))
             st.markdown(f'<div style="border-left:6px solid {pitch_color};padding:7px 12px;margin:9px 0;background:rgba(128,128,128,0.08);border-radius:6px"><b>{label}</b> · {p["n"]} pitches</div>', unsafe_allow_html=True)
+            hand_raw = str(report_data["PitcherThrows"].dropna().iloc[0]).strip().upper() if "PitcherThrows" in report_data and report_data["PitcherThrows"].notna().any() else ""
+            hand = "R" if hand_raw in ("R","RIGHT") else "L" if hand_raw in ("L","LEFT") else None
+            ref = pooled_mlb(mlb_frames, p["name"], hand=hand)
+            if ref and ref.get("RelSpeed") is not None and vals["RelSpeed"] is not None:
+                grade, grade_color = velocity_grade(vals["RelSpeed"], ref["RelSpeed"])
+                st.markdown(f'<div style="padding:9px 12px;background:{grade_color}20;border-left:6px solid {grade_color};border-radius:5px"><b style="color:{grade_color}">{grade}</b> · Player {vals["RelSpeed"]:.1f} mph / MLB {ref["RelSpeed"]:.1f} mph · {", ".join(map(str,ref["seasons"]))} · {ref["RelSpeed_n"]:,} MLB pitches</div>', unsafe_allow_html=True)
+                st.caption("MLB IVB and horizontal movement: " + (f'{ref.get("InducedVertBreak",float("nan")):.1f} / {ref.get("HorzBreak",float("nan")):.1f} inches. Movement sign conventions must be verified before grading shape.'))
+            else:
+                st.caption("MLB comparison unavailable for this pitch type / handedness.")
             cols = st.columns(5)
             for c, field, title, unit in zip(cols, ["RelSpeed","InducedVertBreak","HorzBreak","SpinRate","VertApprAngle"], ["Velocity","IVB","HB","Spin","VAA"], ["mph","in","in","rpm","°"]):
                 val = vals[field]
