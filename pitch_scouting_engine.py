@@ -31,7 +31,7 @@ def pitch_rows(df):
 def summaries(df):
     rows=pitch_rows(df)
     if not rows:return [],[]
-    primary=next((p for p in rows if p["name"] in ("Four-Seam Fastball","Sinker")),rows[0])
+    primary=next((p for p in rows if p["name"] in ("Four-Seam Fastball","Sinker","Cutter")),rows[0])
     v=primary["v"]
     overall=[f"The selected sample contains {len(df):,} pitches and {len(rows)} tagged pitch types. The comparison anchor is {primary['name']} ({primary['n']} pitches), averaging {display(v['RelSpeed'])} mph, {display(v['InducedVertBreak'])} inches IVB and {display(v['HorzBreak'])} inches HB."]
     for p in rows:
