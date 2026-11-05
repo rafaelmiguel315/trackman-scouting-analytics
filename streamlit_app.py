@@ -647,16 +647,32 @@ def metric_cards(items, role):
                 role,
             )
 
-            if avg is None:
+            contact_colors = {
+                "Hard Contact %": ("HARD CONTACT · EV ≥90 mph", "#dc2626"),
+                "Medium Contact %": ("MEDIUM CONTACT · EV 80–<90 mph", "#eab308"),
+                "Weak Contact %": ("WEAK CONTACT · EV <80 mph", "#2563eb"),
+                "Weak Contact Generated %": ("WEAK CONTACT GENERATED · EV <80 mph", "#dc2626"),
+            }
+            if name in contact_colors:
+                category_label, category_color = contact_colors[name]
+                c.markdown(
+                    f'<div style="border-left:6px solid {category_color};'
+                    f'background:{category_color}24;padding:10px 12px;border-radius:7px">'
+                    f'<b style="color:{category_color}">{category_label}</b>'
+                    f'<div style="font-size:0.82em">Fixed EV category · not a league grade</div></div>',
+                    unsafe_allow_html=True,
+                )
+            elif avg is None:
                 c.caption("Measured · no verified comparison")
             else:
                 c.markdown(
-                    f'<div style="border-left:5px solid {color};'
-                    f'background:{color}18;padding:9px 11px;border-radius:6px">'
+                    f'<div style="border-left:6px solid {color};'
+                    f'background:{color}24;padding:10px 12px;border-radius:7px">'
                     f'<strong style="color:{color}">{label}</strong>'
                     f' · {"SAMPLE" if demo_mode and "DEMO" in label else benchmark_level} reference: {avg:.1f}</div>',
                     unsafe_allow_html=True,
                 )
+
 
 
 def metric_table(data, definitions):
