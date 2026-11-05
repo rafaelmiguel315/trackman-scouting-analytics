@@ -1,5 +1,7 @@
 import unittest
 import pandas as pd
+from unittest.mock import patch
+from mlb_movement_reference import retrieve
 from mlb_movement_reference import pooled, velocity_grade
 
 class MLBReferenceTests(unittest.TestCase):
@@ -17,6 +19,17 @@ class MLBReferenceTests(unittest.TestCase):
         r=pooled([a],"Slider","L")
         self.assertEqual(r["seasons"],[2025])
         self.assertEqual(velocity_grade(88,85)[0],"Above MLB velocity avg")
+
+    def test_downloads_all_pitch_categories_not_only_default_fastball(self):
+        def fake_fetch(year, pitch_type):
+            return pd.DataFrame([{"season":year,"pitch_type":pitch_type,"pitch_hand":"R",
+                "pitches_thrown":100,"avg_speed":90,"pitcher_break_z_induced":10,
+                "pitcher_break_x":5}])
+        with patch("mlb_movement_reference._fetch_pitch", side_effect=fake_fetch):
+            result = retrieve(2025)
+        self.assertIn("SL", set(result["pitch_type"]))
+        self.assertIn("CH", set(result["pitch_type"]))
+        self.assertIn("FF", set(result["pitch_type"]))
 
     def test_missing_pitch_type_no_grade(self):
         self.assertIsNone(pooled([pd.DataFrame({"season":[2025],"pitch_type":["FF"],"pitch_hand":["R"],"pitches_thrown":[20],"avg_speed":[90]})],"Slider"))
