@@ -1776,6 +1776,25 @@ elif page == "Pitcher Analytics":
 
     movement_profile(d)
 
+    # Arsenal-level visual summary remains visible even when a pitch filter is active.
+    from pitch_scouting_engine import pitch_rows
+    arsenal = pitch_rows(report_data)
+    if arsenal:
+        st.subheader("Full Arsenal | Pitch-by-Pitch")
+        st.caption("Pitch colors identify pitch types; they are not performance grades. Red = good, yellow = average, blue = poor only for verified comparable benchmarks.")
+        for p in arsenal:
+            vals = p["v"]
+            label = escape(p["name"])
+            pitch_color = PITCH_COLORS.get(p["name"], PITCH_COLORS.get(p["name"].replace("Four-Seam Fastball", "Fastball"), "#64748b"))
+            st.markdown(f'<div style="border-left:6px solid {pitch_color};padding:7px 12px;margin:9px 0;background:rgba(128,128,128,0.08);border-radius:6px"><b>{label}</b> · {p["n"]} pitches</div>', unsafe_allow_html=True)
+            cols = st.columns(5)
+            for c, field, title, unit in zip(cols, ["RelSpeed","InducedVertBreak","HorzBreak","SpinRate","VertApprAngle"], ["Velocity","IVB","HB","Spin","VAA"], ["mph","in","in","rpm","°"]):
+                val = vals[field]
+                c.metric(title, "N/A" if val is None else f"{val:.1f} {unit}")
+            if p["whiff_pct"] is not None:
+                st.caption(f'Observed Whiff: {p["whiff_pct"]:.1f}% ({p["whiffs"]}/{p["swings"]} swings). ' + ("Small sample." if p["swings"] < 20 else ""))
+        st.caption("MLB/MiLB grades require verified pitch-type, handedness, season and measurement-matched reference distributions.")
+
     st.caption("The PDF includes the full pitch arsenal for the selected player and session dates, even when a single pitch type is selected in the chart filter.")
     download_report(
         pitcher,
