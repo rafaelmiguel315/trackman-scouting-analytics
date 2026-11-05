@@ -1119,6 +1119,7 @@ def pdf_report(player, role, data, bottom, top):
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
     from pitch_scouting_engine import pitch_rows
+    from scouting_quick_summary import shape_summary, overall_summary
 
     navy = colors.HexColor("#142d49")
     muted = colors.HexColor("#64748b")
@@ -1169,14 +1170,17 @@ def pdf_report(player, role, data, bottom, top):
                                    ("FONTSIZE",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),8),
                                    ("BOTTOMPADDING",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"MIDDLE")]))
         elements.append(table)
-        elements.append(Paragraph("WHAT TO KNOW", styles["SimpleHead"]))
+        elements.append(Paragraph("OVERALL SUMMARY", styles["SimpleHead"]))
+        elements.append(Paragraph(escape(overall_summary(pitches)), styles["SimpleText"]))
+        elements.append(Paragraph("PITCH-BY-PITCH SCOUTING", styles["SimpleHead"]))
         for p in pitches:
-            v=p["v"]
-            speed = "speed unavailable" if v["RelSpeed"] is None else f'{v["RelSpeed"]:.1f} mph'
-            whiff = "no swings recorded" if p["whiff_pct"] is None else f'{p["whiff_pct"]:.0f}% misses on {p["swings"]} swings'
-            caution = "Small sample." if p["n"] < 10 or p["swings"] < 20 else ""
-            line = f'<b>{escape(p["name"])}:</b> {speed}; {whiff}. {caution}'
-            elements.append(Paragraph(line,styles["SimpleText"]))
+            vertical, horizontal, separation = shape_summary(p, pitches)
+            elements.append(KeepTogether([
+                Paragraph(f'<b>{escape(p["name"])} ({p["n"]} pitches)</b>', styles["SimpleText"]),
+                Paragraph(escape(vertical), styles["SimpleText"]),
+                Paragraph(escape(horizontal), styles["SimpleText"]),
+                Paragraph(escape(separation), styles["SimpleText"]),
+            ]))
         elements.append(Paragraph("QUICK DEFINITIONS", styles["SimpleHead"]))
         elements.append(Paragraph("<b>IVB:</b> how much a pitch stays up or drops versus gravity. <b>Side break:</b> left/right movement. <b>Whiff:</b> missed swings.",styles["SimpleText"]))
     else:
