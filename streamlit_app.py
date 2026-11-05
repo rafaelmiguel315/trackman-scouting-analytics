@@ -603,6 +603,20 @@ def rating(metric, role, value):
 # METRIC CARDS
 # ==================================================
 
+def visual_grade(value, metric, role):
+    """Clearly labeled sample thresholds only when demo toggle is enabled."""
+    if demo_mode:
+        examples = {"Strike %": (65, 8, "higher"), "Whiff %": (25, 7, "higher"),
+                    "Chase %": (30, 7, "higher"), "Ball %": (35, 7, "lower"),
+                    "First Pitch Strike %": (60, 8, "higher")}
+        if metric in examples and value is not None and pd.notna(value):
+            avg, tolerance, direction = examples[metric]
+            delta = (float(value) - avg) * (1 if direction == "higher" else -1)
+            grade, color = ("GOOD", "#dc2626") if delta > tolerance else (("BELOW", "#2563eb") if delta < -tolerance else ("AVERAGE", "#eab308"))
+            return grade + " · DEMO", color, avg
+    return rating(metric, role, value)
+
+
 def metric_cards(items, role):
     entries = list(items.items())
 
@@ -624,7 +638,7 @@ def metric_cards(items, role):
             except (ValueError, TypeError):
                 number = None
 
-            label, color, avg = rating(
+            label, color, avg = visual_grade(
                 name,
                 role,
                 number,
@@ -644,30 +658,15 @@ def metric_cards(items, role):
 
 def metric_table(data, definitions):
     rows = []
-
     for field, (label, unit) in definitions.items():
-        values = numeric(
-            data,
-            field,
-        ).dropna()
-
+        values = numeric(data, field).dropna()
         if values.empty:
             continue
-
-        rows.append({
-            "Metric": f"{label} ({unit})",
-            "AVG": round(values.mean(), 2),
-            "MAX": round(values.max(), 2),
-            "MIN": round(values.min(), 2),
-            "Count": len(values),
-        })
-
+        rows.append({"Metric": label, "Average": f"{values.mean():.1f} {unit}",
+                     "Range": f"{values.min():.1f}–{values.max():.1f}", "Pitches": len(values)})
     if rows:
-        st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            use_container_width=True,
-        )
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+        st.caption("These are measurements, not grades. Pitch quality depends on pitch type and context.")
     else:
         st.info("No numeric metrics available.")
 
@@ -1111,428 +1110,93 @@ def strike_zone_chart(data, bottom, top):
 # ==================================================
 
 def pdf_report(player, role, data, bottom, top):
+    """Short, beginner-friendly one-page report. Never claim demo data is real."""
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.platypus import (
-        SimpleDocTemplate,
-        Paragraph,
-        Spacer,
-        Table,
-        TableStyle,
-        Image,
-        KeepTogether,
-        PageBreak,
-    )
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether
+    from pitch_scouting_engine import pitch_rows
 
-    buffer = io.BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=38,
-        rightMargin=38,
-        topMargin=38,
-        bottomMargin=38,
-    )
-
+    navy = colors.HexColor("#142d49")
+    muted = colors.HexColor("#64748b")
+    pale = colors.HexColor("#f1f5f9")
+    buff = io.BytesIO()
+    doc = SimpleDocTemplate(buff, pagesize=letter, leftMargin=38, rightMargin=38,
+                            topMargin=38, bottomMargin=38)
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="ReportSection", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=16, textColor=colors.HexColor("#17324d"), spaceBefore=12, spaceAfter=7))
-    styles.add(ParagraphStyle(name="ReportBody", parent=styles["Normal"], fontSize=9, leading=14, spaceAfter=6))
-    styles.add(ParagraphStyle(name="ReportPitch", parent=styles["Heading3"], fontSize=10, leading=14, textColor=colors.HexColor("#17324d"), spaceBefore=9, spaceAfter=4))
-    def page_footer(canvas, document):
+    styles.add(ParagraphStyle(name="SimpleTitle", parent=styles["Title"], fontSize=18, leading=22, textColor=navy, spaceAfter=6))
+    styles.add(ParagraphStyle(name="SimpleHead", parent=styles["Heading2"], fontSize=11, leading=14, textColor=navy, spaceBefore=12, spaceAfter=6))
+    styles.add(ParagraphStyle(name="SimpleText", parent=styles["Normal"], fontSize=9, leading=13, spaceAfter=6))
+    styles.add(ParagraphStyle(name="SimpleSmall", parent=styles["Normal"], fontSize=8, leading=11, textColor=muted))
+    elements = [Paragraph(escape(str(player)), styles["SimpleTitle"]),
+                Paragraph(f"{escape(role)} | {len(data)} pitches | TrackMan session report", styles["SimpleSmall"]),
+                Spacer(1, 9)]
+    if demo_mode:
+        elements.append(Paragraph("<b>DEMO PREVIEW — sample grading thresholds, not official MLB/MiLB data</b>", styles["SimpleText"]))
+    if role == "Pitcher":
+        stats = pitching_stats(data, bottom, top)
+        elements.append(Paragraph("AT A GLANCE", styles["SimpleHead"]))
+        key_names = ["Strike %", "Ball %", "Whiff %", "Chase %"]
+        cells = []
+        for name in key_names:
+            value = stats.get(name, "N/A")
+            try:
+                num = float(str(value).replace("%", "").replace(",", ""))
+            except (TypeError, ValueError):
+                num = None
+            label, shade, avg = visual_grade(num, name, "Pitcher")
+            note = label if avg is not None else "Measured"
+            cells.append(Paragraph(f'<font color="{shade}"><b>{escape(str(value))}</b></font><font size="8"><br/>{escape(name)}<br/>{escape(note)}</font>', styles["SimpleText"]))
+        card_table = Table([cells], colWidths=[134]*4)
+        card_table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,-1),pale),("VALIGN",(0,0),(-1,-1),"TOP"),
+                                        ("LEFTPADDING",(0,0),(-1,-1),10),("TOPPADDING",(0,0),(-1,-1),12),
+                                        ("BOTTOMPADDING",(0,0),(-1,-1),9)]))
+        elements.append(card_table)
+        elements.append(Paragraph("PITCH ARSENAL", styles["SimpleHead"]))
+        pitches = pitch_rows(data)
+        rows = [["PITCH", "THROWN", "SPEED", "IVB", "SIDE BREAK", "WHIFF"]]
+        for p in pitches:
+            v=p["v"]
+            fmtval=lambda k: "—" if v.get(k) is None else f'{v[k]:.1f}'
+            whiff="—" if p["whiff_pct"] is None else f'{p["whiff_pct"]:.0f}%'
+            rows.append([p["name"], str(p["n"]),fmtval("RelSpeed"),fmtval("InducedVertBreak"),fmtval("HorzBreak"),whiff])
+        table=Table(rows,colWidths=[143,62,73,72,99,87],repeatRows=1)
+        table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),navy),("TEXTCOLOR",(0,0),(-1,0),colors.white),
+                                   ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,pale]),
+                                   ("FONTSIZE",(0,0),(-1,-1),8),("TOPPADDING",(0,0),(-1,-1),8),
+                                   ("BOTTOMPADDING",(0,0),(-1,-1),8),("VALIGN",(0,0),(-1,-1),"MIDDLE")]))
+        elements.append(table)
+        elements.append(Paragraph("WHAT TO KNOW", styles["SimpleHead"]))
+        for p in pitches:
+            v=p["v"]
+            speed = "speed unavailable" if v["RelSpeed"] is None else f'{v["RelSpeed"]:.1f} mph'
+            whiff = "no swings recorded" if p["whiff_pct"] is None else f'{p["whiff_pct"]:.0f}% misses on {p["swings"]} swings'
+            caution = "Small sample." if p["n"] < 10 or p["swings"] < 20 else ""
+            line = f'<b>{escape(p["name"])}:</b> {speed}; {whiff}. {caution}'
+            elements.append(Paragraph(line,styles["SimpleText"]))
+        elements.append(Paragraph("QUICK DEFINITIONS", styles["SimpleHead"]))
+        elements.append(Paragraph("<b>IVB:</b> how much a pitch stays up or drops versus gravity. <b>Side break:</b> left/right movement. <b>Whiff:</b> missed swings.",styles["SimpleText"]))
+    else:
+        stats=hitting_stats(data,bottom,top)
+        elements.append(Paragraph("HITTING SNAPSHOT",styles["SimpleHead"]))
+        for name,value in list(stats.items())[:8]:
+            elements.append(Paragraph(f"<b>{escape(str(name))}:</b> {escape(str(value))}",styles["SimpleText"]))
+        ev=numeric(data,"ExitSpeed").dropna()
+        if len(ev):
+            elements.append(Paragraph(f"<b>Average exit speed:</b> {ev.mean():.1f} mph from {len(ev)} recorded contacts.",styles["SimpleText"]))
+    elements.append(Spacer(1,10))
+    elements.append(Paragraph("This report describes only the selected session. Few pitches or swings can give misleading percentages. Red = above demo reference, yellow = near, blue = below (only when DEMO is enabled).",styles["SimpleSmall"]))
+    def footer(canvas, document):
         canvas.saveState()
         canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
-        canvas.line(38, 32, 574, 32)
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawString(38, 21, "TRACKMAN | INTERNATIONAL SCOUTING  •  DESCRIPTIVE PLAYER EVALUATION")
-        canvas.drawRightString(574, 21, f"Page {document.page}")
+        canvas.line(38,30,574,30)
+        canvas.setFont("Helvetica",8)
+        canvas.setFillColor(muted)
+        canvas.drawString(38,19,"TRACKMAN SCOUTING | QUICK READ")
+        canvas.drawRightString(574,19,f"Page {document.page}")
         canvas.restoreState()
-
-    elements = [
-        Paragraph(
-            "TrackMan Scouting Analytics",
-            styles["Title"],
-        ),
-        Paragraph(
-            f"{escape(str(player))} | "
-            f"{escape(role)} | "
-            f"{escape(benchmark_level)} "
-            f"{benchmark_season_mode if benchmark_season_mode != 'Single season' else benchmark_season}",
-            styles["Heading2"],
-        ),
-        Paragraph(
-            f"Pitches in selected data: {len(data):,}",
-            styles["Normal"],
-        ),
-        Spacer(1, 12),
-    ]
-
-    if "Date" in data.columns:
-        dates = (
-            data["Date"]
-            .dropna()
-            .astype(str)
-            .unique()
-        )
-
-        if len(dates):
-            elements.append(
-                Paragraph(
-                    "Session dates: "
-                    + escape(", ".join(sorted(dates))),
-                    styles["Normal"],
-                )
-            )
-
-            elements.append(Spacer(1, 10))
-
-    if role == "Pitcher":
-        stats = pitching_stats(
-            data,
-            bottom,
-            top,
-        )
-        definitions = PITCH_METRICS
-    else:
-        stats = hitting_stats(
-            data,
-            bottom,
-            top,
-        )
-        definitions = HITTER_METRICS
-
-    rows = [[
-        "Metric",
-        "Player",
-        "Level Avg",
-        "Rating",
-    ]]
-
-    ratings = []
-
-    for metric, value in stats.items():
-        try:
-            number = float(
-                str(value)
-                .replace("%", "")
-                .replace(",", "")
-            )
-        except (TypeError, ValueError):
-            number = None
-
-        label, color, avg = rating(
-            metric,
-            role,
-            number,
-        )
-
-        avg_text = (
-            "N/A"
-            if avg is None
-            else f"{avg:.1f}"
-        )
-
-        rows.append([
-            metric,
-            str(value),
-            avg_text,
-            label,
-        ])
-
-        ratings.append(color)
-
-    table = Table(
-        rows,
-        colWidths=[205, 85, 90, 95],
-        repeatRows=1,
-    )
-
-    commands = [
-        (
-            "BACKGROUND",
-            (0, 0),
-            (-1, 0),
-            colors.HexColor("#e2e8f0"),
-        ),
-        (
-            "FONTNAME",
-            (0, 0),
-            (-1, 0),
-            "Helvetica-Bold",
-        ),
-        (
-            "GRID",
-            (0, 0),
-            (-1, -1),
-            0.3,
-            colors.HexColor("#cbd5e1"),
-        ),
-        (
-            "FONTSIZE",
-            (0, 0),
-            (-1, -1),
-            8,
-        ),
-        (
-            "VALIGN",
-            (0, 0),
-            (-1, -1),
-            "MIDDLE",
-        ),
-        (
-            "BOTTOMPADDING",
-            (0, 0),
-            (-1, -1),
-            7,
-        ),
-    ]
-
-    for index, color in enumerate(
-        ratings,
-        start=1,
-    ):
-        commands.append((
-            "TEXTCOLOR",
-            (3, index),
-            (3, index),
-            colors.HexColor(color),
-        ))
-
-    table.setStyle(
-        TableStyle(commands)
-    )
-
-    elements.extend([
-        table,
-        Spacer(1, 15),
-        Paragraph(
-            "Measured Metrics",
-            styles["Heading2"],
-        ),
-    ])
-
-    metric_rows = [[
-        "Metric",
-        "Average",
-        "Minimum",
-        "Maximum",
-        "Count",
-    ]]
-
-    for field, (label, unit) in definitions.items():
-        values = numeric(
-            data,
-            field,
-        ).dropna()
-
-        if values.empty:
-            continue
-
-        metric_rows.append([
-            f"{label} ({unit})",
-            f"{values.mean():.2f}",
-            f"{values.min():.2f}",
-            f"{values.max():.2f}",
-            str(len(values)),
-        ])
-
-    if len(metric_rows) > 1:
-        metrics_table = Table(
-            metric_rows,
-            colWidths=[185, 75, 75, 75, 65],
-            repeatRows=1,
-        )
-
-        metrics_table.setStyle(
-            TableStyle([
-                (
-                    "BACKGROUND",
-                    (0, 0),
-                    (-1, 0),
-                    colors.HexColor("#e2e8f0"),
-                ),
-                (
-                    "GRID",
-                    (0, 0),
-                    (-1, -1),
-                    0.3,
-                    colors.grey,
-                ),
-                (
-                    "FONTSIZE",
-                    (0, 0),
-                    (-1, -1),
-                    8,
-                ),
-            ])
-        )
-
-        elements.append(metrics_table)
-
-    figures = []
-
-    if role == "Pitcher":
-        figures.append((
-            "Pitch Movement | Pitcher View",
-            movement_figure(data),
-        ))
-
-    figures.append((
-        "Strike Zone",
-        strike_zone_figure(
-            data,
-            bottom,
-            top,
-        ),
-    ))
-
-    def vector_chart(title, chart_data):
-        """ReportLab vector fallback: does not require Chrome or Kaleido."""
-        from reportlab.graphics.shapes import Drawing, Line, Circle, String, Rect
-        from reportlab.lib.colors import HexColor
-        if title.startswith("Pitch Movement"):
-            xkey, ykey = "HorzBreak", "InducedVertBreak"
-            xlo, xhi, ylo, yhi = -30., 30., -30., 30.
-        else:
-            xkey, ykey = "PlateLocSide", "PlateLocHeight"
-            xlo, xhi, ylo, yhi = -2.5, 2.5, 0., 5.
-        if xkey not in chart_data or ykey not in chart_data:
-            return None
-        xs = pd.to_numeric(chart_data[xkey], errors="coerce")
-        ys = pd.to_numeric(chart_data[ykey], errors="coerce")
-        valid = xs.notna() & ys.notna()
-        if not valid.any():
-            return None
-        drawing = Drawing(470, 350)
-        left, low, width, height = 56, 45, 360, 265
-        drawing.add(Rect(left, low, width, height, fillColor=HexColor("#f8fafc"), strokeColor=HexColor("#cbd5e1")))
-        for tick in range(6):
-            xx = left + tick * width / 5
-            yy = low + tick * height / 5
-            drawing.add(Line(xx, low, xx, low+height, strokeColor=HexColor("#e2e8f0")))
-            drawing.add(Line(left, yy, left+width, yy, strokeColor=HexColor("#e2e8f0")))
-            drawing.add(String(xx-10, low-16, f"{xlo+(xhi-xlo)*tick/5:.0f}", fontSize=9))
-            drawing.add(String(left-29, yy-3, f"{ylo+(yhi-ylo)*tick/5:.0f}", fontSize=9))
-        if title.startswith("Pitch Movement"):
-            drawing.add(Line(left+width*(-xlo)/(xhi-xlo), low, left+width*(-xlo)/(xhi-xlo), low+height, strokeColor=HexColor("#64748b"), strokeWidth=1.5))
-            drawing.add(Line(left, low+height*(-ylo)/(yhi-ylo), left+width, low+height*(-ylo)/(yhi-ylo), strokeColor=HexColor("#64748b"), strokeWidth=1.5))
-        else:
-            zl = left + width*((-0.83-xlo)/(xhi-xlo))
-            zr = left + width*((0.83-xlo)/(xhi-xlo))
-            zb = low + height*((bottom-ylo)/(yhi-ylo))
-            zt = low + height*((top-ylo)/(yhi-ylo))
-            drawing.add(Rect(zl,zb,zr-zl,zt-zb,fillColor=None,strokeColor=HexColor("#111827"),strokeWidth=2))
-        tags = chart_data["TaggedPitchType"].fillna("Unknown").astype(str) if "TaggedPitchType" in chart_data else pd.Series("Unknown", index=chart_data.index)
-        for i in chart_data.index[valid]:
-            x,y = float(xs.loc[i]),float(ys.loc[i])
-            if xlo <= x <= xhi and ylo <= y <= yhi:
-                shade = PITCH_COLORS.get(tags.loc[i], "#64748b")
-                drawing.add(Circle(left+width*(x-xlo)/(xhi-xlo),low+height*(y-ylo)/(yhi-ylo),3.2,fillColor=HexColor(shade),strokeColor=None))
-        drawing.add(String(160, 17, "Horizontal Break (in)" if title.startswith("Pitch Movement") else "Plate Location Side (ft)", fontSize=10))
-        drawing.add(String(8, 329, "IVB (in)" if title.startswith("Pitch Movement") else "Plate Height (ft)", fontSize=10))
-        return drawing
-
-    for title, fig in figures:
-        if fig is None:
-            continue
-
-        try:
-            png = fig.to_image(
-                format="png",
-                scale=2,
-            )
-
-            elements.extend([
-                Spacer(1, 15),
-                Paragraph(
-                    title,
-                    styles["Heading2"],
-                ),
-                Image(
-                    io.BytesIO(png),
-                    width=470,
-                    height=350,
-                ),
-            ])
-
-        except Exception:
-            fallback = vector_chart(title, data)
-            if fallback is not None:
-                elements.extend([Spacer(1, 15), Paragraph(title, styles["Heading2"]), fallback])
-            else:
-                elements.extend([Spacer(1, 10), Paragraph(f"{title}: insufficient chart coordinates.", styles["Normal"])])
-
-    elements.extend([
-        Spacer(1, 12),
-        Paragraph(
-            "Contact thresholds: "
-            "Hard >=90 mph; "
-            "Medium 80 to <90 mph; "
-            "Weak <80 mph.",
-            styles["Normal"],
-        ),
-        Paragraph(
-            "Benchmarks appear only when a "
-            "sourced reference is available.",
-            styles["Normal"],
-        ),
-    ])
-
-    if role == "Pitcher":
-        from pitch_scouting_engine import summaries, pitch_rows
-        overall, details = summaries(data)
-        pitch_details = pitch_rows(data)
-        if overall:
-            elements.extend([PageBreak(), Paragraph("PLAYER SCOUTING SUMMARY", styles["ReportSection"]),
-                Paragraph("What does this pitcher throw?", styles["ReportSection"]),
-                Paragraph(f"{len(data)} tracked pitches across {len(pitch_details)} pitch types. All values below describe this session, not a projection.", styles["ReportBody"])])
-            quick = [["PITCH", "USAGE", "VELOCITY", "IVB", "HORIZONTAL"]]
-            for p in pitch_details:
-                v=p["v"]
-                quick.append([p["name"], f'{p["n"]}/{len(data)}', "—" if v["RelSpeed"] is None else f'{v["RelSpeed"]:.1f} mph', "—" if v["InducedVertBreak"] is None else f'{v["InducedVertBreak"]:.1f} in', "—" if v["HorzBreak"] is None else f'{v["HorzBreak"]:.1f} in'])
-            quick_table=Table(quick,colWidths=[145,62,85,85,98],repeatRows=1)
-            quick_table.setStyle(TableStyle([
-                ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#17324d")),
-                ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-                ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f1f5f9")]),
-                ("BOTTOMPADDING",(0,0),(-1,-1),9),
-                ("TOPPADDING",(0,0),(-1,-1),9),
-                ("FONTSIZE",(0,0),(-1,-1),8),
-                ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
-                ("LINEBELOW",(0,-1),(-1,-1),0.6,colors.HexColor("#cbd5e1")),
-            ]))
-            elements.extend([quick_table,Spacer(1,12),Paragraph("Arsenal separation — explained",styles["ReportSection"])])
-            for line in overall[1:]:
-                elements.append(Paragraph(escape(line),styles["ReportBody"]))
-            elements.append(Paragraph("Pitch-by-pitch explanation",styles["ReportSection"]))
-            for pitch_name, paragraph in details:
-                elements.append(KeepTogether([Paragraph(escape(pitch_name),styles["ReportPitch"]),Paragraph(escape(paragraph),styles["ReportBody"]),Spacer(1,6)]))
-            elements.append(Paragraph("How to read this report",styles["ReportSection"]))
-            elements.append(Paragraph("IVB describes movement relative to gravity; horizontal break describes side-to-side movement. Whiff% is misses divided by swings. A pitch with only a few observations should not receive a confident effectiveness grade. Velocity is not a complete measure of pitch quality.",styles["ReportBody"]))
-            elements.append(Paragraph("MLB references: available in the app when the official Baseball Savant download succeeds. MiLB references are not inferred from MLB. Comparisons are descriptive until matching measurement conventions are verified.",styles["ReportBody"]))
-
-    if role == "Batter":
-        elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Hitting Assessment", styles["Heading2"])])
-        ev = pd.to_numeric(data["ExitSpeed"], errors="coerce").dropna() if "ExitSpeed" in data else pd.Series(dtype=float)
-        angle = pd.to_numeric(data["Angle"], errors="coerce").dropna() if "Angle" in data else pd.Series(dtype=float)
-        lines = [f"The selected sample contains {len(data):,} tracked pitches. Average exit velocity: {ev.mean():.1f} mph across {len(ev)} recorded exit velocities." if len(ev) else f"The selected sample contains {len(data):,} tracked pitches. Exit velocity data are unavailable."]
-        if len(angle):
-            lines.append(f"Average launch angle: {angle.mean():.1f} degrees across {len(angle)} recorded launch angles.")
-        hitter_calls = classify(data, bottom, top)
-        hitter_rates = batting_rates(hitter_calls)
-        for metric in ("Whiff %", "Chase %", "Hard Contact %", "Weak Contact %"):
-            value = hitter_rates.get(metric)
-            if value is not None and not pd.isna(value):
-                lines.append(f"Observed {metric}: {value:.1f}% in the selected sample.")
-        lines.append("These outcomes describe the selected TrackMan sample, not projected major-league hitting effectiveness. Small samples, competition level, pitch mix and missing observations limit conclusions.")
-        for line in lines:
-            elements.extend([Paragraph(escape(line), styles["Normal"]), Spacer(1, 7)])
-
-    doc.build(elements, onFirstPage=page_footer, onLaterPages=page_footer)
-
-    return buffer.getvalue()
+    doc.build(elements,onFirstPage=footer,onLaterPages=footer)
+    return buff.getvalue()
 
 
 def download_report(
@@ -1578,6 +1242,8 @@ def download_report(
 # ==================================================
 
 st.sidebar.header("Analysis Settings")
+
+demo_mode = st.sidebar.toggle("Preview performance colors (DEMO)", value=False, help="Illustrative only: NOT MLB/MiLB statistics or scouting grades.")
 
 benchmark_level = st.sidebar.selectbox(
     "Benchmark Level",
