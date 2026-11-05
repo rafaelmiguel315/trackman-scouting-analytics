@@ -638,16 +638,49 @@ def rating(metric, role, value):
 # METRIC CARDS
 # ==================================================
 
+# Direction is role-specific. Not every batter metric is the inverse of pitching.
+# These are demonstration targets only, not official MLB/MiLB benchmarks.
+DEMO_GRADE_RULES = {
+    "Pitcher": {
+        "Strike %": (65, 8, "higher"),
+        "Ball %": (35, 7, "lower"),
+        "First Pitch Strike %": (60, 8, "higher"),
+        "Whiff %": (25, 7, "higher"),
+        "Chase %": (30, 7, "higher"),
+        "K %": (23, 5, "higher"),
+        "BB %": (9, 3, "lower"),
+        "Weak Contact Generated %": (30, 10, "higher"),
+    },
+    "Batter": {
+        "Swing %": (45, 8, "neutral"),
+        "Whiff %": (25, 7, "lower"),
+        "Contact %": (75, 7, "higher"),
+        "Chase %": (30, 7, "lower"),
+        "Z-Contact %": (85, 7, "higher"),
+        "O-Contact %": (60, 8, "neutral"),
+        "K %": (23, 5, "lower"),
+        "BB %": (9, 3, "higher"),
+        "Hard Contact %": (30, 10, "higher"),
+        "Medium Contact %": (30, 10, "neutral"),
+        "Weak Contact %": (30, 10, "lower"),
+    },
+}
+
+
 def visual_grade(value, metric, role):
-    """Clearly labeled sample thresholds only when demo toggle is enabled."""
+    """Role-aware sample grades; do not grade metrics without a valid direction."""
     if demo_mode:
-        examples = {"Strike %": (65, 8, "higher"), "Whiff %": (25, 7, "higher"),
-                    "Chase %": (30, 7, "higher"), "Ball %": (35, 7, "lower"),
-                    "First Pitch Strike %": (60, 8, "higher")}
-        if metric in examples and value is not None and pd.notna(value):
-            avg, tolerance, direction = examples[metric]
+        rule = DEMO_GRADE_RULES.get(role, {}).get(metric)
+        if rule and value is not None and pd.notna(value):
+            avg, tolerance, direction = rule
+            if direction == "neutral":
+                return "CONTEXT ONLY · DEMO", "#64748b", None
             delta = (float(value) - avg) * (1 if direction == "higher" else -1)
-            grade, color = ("GOOD", "#dc2626") if delta > tolerance else (("BELOW", "#2563eb") if delta < -tolerance else ("AVERAGE", "#eab308"))
+            grade, color = (
+                ("GOOD", "#dc2626") if delta > tolerance
+                else ("BELOW", "#2563eb") if delta < -tolerance
+                else ("AVERAGE", "#eab308")
+            )
             return grade + " · DEMO", color, avg
     return rating(metric, role, value)
 
