@@ -1,11 +1,20 @@
 
 import hashlib
+import io
+from pathlib import Path
+from xml.sax.saxutils import escape
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
 from supabase_store import authenticate, import_csv, load_all
+
+
+# ==================================================
+# APP CONFIGURATION
+# ==================================================
 
 st.set_page_config(
     page_title="TrackMan Scouting Analytics",
@@ -14,11 +23,31 @@ st.set_page_config(
 )
 
 sb = authenticate()
+
 st.title("⚾ TrackMan Scouting Analytics")
 st.caption("International Scouting | Video & Data")
 
 if "trackman_data" not in st.session_state:
     st.session_state.trackman_data = load_all(sb)
+
+
+# ==================================================
+# CONSTANTS
+# ==================================================
+
+HARD_EV = 90.0
+MEDIUM_EV = 80.0
+ZONE_HALF_WIDTH = 17 / 24
+
+LEVELS = [
+    "MLB",
+    "Triple-A",
+    "Double-A",
+    "High-A",
+    "Single-A",
+    "Rookie",
+    "DSL",
+]
 
 PITCH_METRICS = {
     "RelSpeed": ("Velocity", "mph"),
@@ -52,150 +81,6 @@ PITCH_COLORS = {
     "Cutter": "#f59e0b",
     "Splitter": "#14b8a6",
 }
-
-HARD_EV = 95.0
-WEAK_EV = 70.0
-ZONE_HALF_WIDTH = 17 / 24
-
-
-# ==========================================
-# GENERAL HELPERS
-# ==========================================
-
-def column(data, name):
-    if name in data.columns:
-        return data[name]
-    return pd.Series(None, index=data.index)
-
-
-def numeric(data, name):
-    return pd.to_numeric(
-        column(data, name),
-        errors="coerce",
-    )
-
-
-def normalized(data, name):
-    return (
-        column(data, name)
-        .fillna("")
-        .astype(str)
-        .str.lower()
-        .str.strip()
-        .str.replace(r"[^a-z0-9]", "", regex=True)
-    )
-
-
-def pct(num, den):
-    if den is None or den == 0:
-        return None
-    return 100 * num / den
-
-
-def fmt(value, percent=False):
-    if value is None or pd.isna(value):
-        return "N/A"
-    if percent:
-        return f"{value:.1f}%"
-    return f"{int(value):,}"
-
-
-def metric_cards(items, per_row=4):
-    entries = list(items.items())
-    for start in range(0, len(entries), per_row):
-        cols = st.columns(per_row)
-        for c, (name, value) in zip(
-            cols, entries[start:start + per_row]
-        ):
-            c.metric(name, value)
-
-
-def metric_table(data, definitions):
-    rows = []
-    for field, (label, unit) in definitions.items():
-        values = numeric(data, field).dropna()
-        if values.empty:
-            continue
-        rows.append({
-            "Metric": f"{label} ({unit})",
-            "AVG": round(values.mean(), 2),
-            "MAX": round(values.max(), 2),
-            "MIN": round(values.min(), 2),
-            "Count": len(values),
-        })
-
-    if rows:
-        st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            use_container_width=True,
-        )
-    else:
-        st.info("No numeric metrics available.")
-
-
-def choose_player(data, field, key):
-    if field not in data.columns:
-        st.warning(f"{field} column not available.")
-        st.stop()
-
-    names = sorted(
-        x for x in data[field].dropna().astype(str).unique()
-        if x.strip()
-    )
-    if not names:
-        st.warning("No players available.")
-        st.stop()
-
-    return st.selectbox(
-        f"Select {field}", names, key=key
-    )
-
-
-def date_filter(data, key):
-    if "Date" not in data.columns:
-        return data
-
-    dates = sorted(
-        data["Date"].dropna().astype(str).unique()
-    )
-    selected = st.selectbox(
-        "Session Date",
-        ["All dates"] + dates,
-        key=key,
-    )
-    if selected == "All dates":
-        return data
-
-    return data[
-        data["Date"].astype(str) == selected
-    ].copy()
-
-
-def pitch_filter(data, key):
-    if "TaggedPitchType" not in data.columns:
-        return data, "All pitches"
-
-    types = sorted(
-        data["TaggedPitchType"]
-        .dropna().astype(str).unique()
-    )
-    selected = st.selectbox(
-        "Pitch Type",
-        ["All pitches"] + types,
-        key=key,
-    )
-    if selected == "All pitches":
-        return data, selected
-
-    return data[
-        data["TaggedPitchType"].astype(str) == selected
-    ].copy(), selected
-
-
-# ==========================================
-# PITCH CALL CLASSIFICATION
-# ==========================================
 
 WHIFF_CALLS = {
     "strikeswinging",
@@ -236,9 +121,129 @@ BALL_CALLS = {
     "pitchout",
 }
 
-# Foul bunts with two strikes and special scoring
-# situations may need separate treatment.
 
+# ==================================================
+# DATA HELPERS
+# ==================================================
+
+def column(data, name):
+    if name in data.columns:
+        return data[name]
+    return pd.Series(None, index=data.index)
+
+
+def numeric(data, name):
+    return pd.to_numeric(
+        column(data, name),
+        errors="coerce",
+    )
+
+
+def normalized(data, name):
+    return (
+        column(data, name)
+        .fillna("")
+        .astype(str)
+        .str.lower()
+        .str.strip()
+        .str.replace(
+            r"[^a-z0-9]",
+            "",
+            regex=True,
+        )
+    )
+
+
+def pct(numerator, denominator):
+    if denominator is None or denominator == 0:
+        return None
+    return 100 * numerator / denominator
+
+
+def fmt(value, percent=False):
+    if value is None or pd.isna(value):
+        return "N/A"
+    if percent:
+        return f"{value:.1f}%"
+    return f"{int(value):,}"
+
+
+def choose_player(data, field, key):
+    if field not in data.columns:
+        st.warning(f"{field} column unavailable.")
+        st.stop()
+
+    names = sorted(
+        x
+        for x in data[field].dropna().astype(str).unique()
+        if x.strip()
+    )
+
+    if not names:
+        st.warning("No players available.")
+        st.stop()
+
+    return st.selectbox(
+        f"Select {field}",
+        names,
+        key=key,
+    )
+
+
+def date_filter(data, key):
+    if "Date" not in data.columns:
+        return data
+
+    dates = sorted(
+        data["Date"].dropna().astype(str).unique()
+    )
+
+    selected = st.selectbox(
+        "Session Date",
+        ["All dates"] + dates,
+        key=key,
+    )
+
+    if selected == "All dates":
+        return data
+
+    return data[
+        data["Date"].astype(str) == selected
+    ].copy()
+
+
+def pitch_filter(data, key):
+    if "TaggedPitchType" not in data.columns:
+        return data, "All pitches"
+
+    types = sorted(
+        data["TaggedPitchType"]
+        .dropna()
+        .astype(str)
+        .unique()
+    )
+
+    selected = st.selectbox(
+        "Pitch Type",
+        ["All pitches"] + types,
+        key=key,
+    )
+
+    if selected == "All pitches":
+        return data, selected
+
+    return (
+        data[
+            data["TaggedPitchType"].astype(str)
+            == selected
+        ].copy(),
+        selected,
+    )
+
+
+# ==================================================
+# PITCH CLASSIFICATION
+# ==================================================
 
 def classify(data, zone_bottom, zone_top):
     d = data.copy()
@@ -249,9 +254,14 @@ def classify(data, zone_bottom, zone_top):
     d["_inplay"] = calls.isin(IN_PLAY_CALLS)
 
     d["_swing"] = (
-        d["_whiff"] | d["_foul"] | d["_inplay"]
+        d["_whiff"]
+        | d["_foul"]
+        | d["_inplay"]
     )
-    d["_contact"] = d["_foul"] | d["_inplay"]
+
+    d["_contact"] = (
+        d["_foul"] | d["_inplay"]
+    )
 
     d["_strike"] = (
         d["_whiff"]
@@ -259,29 +269,59 @@ def classify(data, zone_bottom, zone_top):
         | d["_inplay"]
         | calls.isin(CALLED_STRIKES)
     )
+
     d["_ball"] = calls.isin(BALL_CALLS)
     d["_known"] = d["_strike"] | d["_ball"]
 
     side = numeric(d, "PlateLocSide")
     height = numeric(d, "PlateLocHeight")
 
-    d["_located"] = side.notna() & height.notna()
+    d["_located"] = (
+        side.notna() & height.notna()
+    )
+
     d["_zone"] = (
         d["_located"]
         & side.between(
-            -ZONE_HALF_WIDTH, ZONE_HALF_WIDTH
+            -ZONE_HALF_WIDTH,
+            ZONE_HALF_WIDTH,
         )
-        & height.between(zone_bottom, zone_top)
+        & height.between(
+            zone_bottom,
+            zone_top,
+        )
     )
-    d["_outside"] = d["_located"] & ~d["_zone"]
+
+    d["_outside"] = (
+        d["_located"] & ~d["_zone"]
+    )
 
     ev = numeric(d, "ExitSpeed")
-    d["_valid_ev"] = d["_inplay"] & ev.notna()
-    d["_hard"] = d["_valid_ev"] & (ev >= HARD_EV)
-    d["_weak"] = d["_valid_ev"] & (ev < WEAK_EV)
+
+    d["_valid_ev"] = (
+        d["_inplay"] & ev.notna()
+    )
+
+    d["_hard"] = (
+        d["_valid_ev"] & ev.ge(HARD_EV)
+    )
+
+    d["_medium"] = (
+        d["_valid_ev"]
+        & ev.ge(MEDIUM_EV)
+        & ev.lt(HARD_EV)
+    )
+
+    d["_weak"] = (
+        d["_valid_ev"] & ev.lt(MEDIUM_EV)
+    )
 
     return d
 
+
+# ==================================================
+# BATTING RATES
+# ==================================================
 
 def batting_rates(d):
     swings = int(d["_swing"].sum())
@@ -289,9 +329,11 @@ def batting_rates(d):
     contacts = int(d["_contact"].sum())
 
     outside = int(d["_outside"].sum())
+
     outside_swings = int(
         (d["_outside"] & d["_swing"]).sum()
     )
+
     outside_contacts = int(
         (d["_outside"] & d["_contact"]).sum()
     )
@@ -299,6 +341,7 @@ def batting_rates(d):
     zone_swings = int(
         (d["_zone"] & d["_swing"]).sum()
     )
+
     zone_contacts = int(
         (d["_zone"] & d["_contact"]).sum()
     )
@@ -309,33 +352,47 @@ def batting_rates(d):
         "Swing %": pct(swings, len(d)),
         "Whiff %": pct(whiffs, swings),
         "Contact %": pct(contacts, swings),
-        "Chase %": pct(outside_swings, outside),
-        "Z-Contact %": pct(zone_contacts, zone_swings),
+        "Chase %": pct(
+            outside_swings,
+            outside,
+        ),
+        "Z-Contact %": pct(
+            zone_contacts,
+            zone_swings,
+        ),
         "O-Contact %": pct(
-            outside_contacts, outside_swings
+            outside_contacts,
+            outside_swings,
         ),
         "Hard Contact %": pct(
-            int(d["_hard"].sum()), ev_count
+            int(d["_hard"].sum()),
+            ev_count,
+        ),
+        "Medium Contact %": pct(
+            int(d["_medium"].sum()),
+            ev_count,
         ),
         "Weak Contact %": pct(
-            int(d["_weak"].sum()), ev_count
+            int(d["_weak"].sum()),
+            ev_count,
         ),
     }
 
 
-# ==========================================
+# ==================================================
 # FIRST PITCH STRIKE
-# ==========================================
+# ==================================================
 
 def first_pitch_strike(d):
     if "PitchofPA" not in d.columns:
         return None
 
-    first = d[numeric(d, "PitchofPA") == 1]
-    if first.empty:
-        return None
+    first = d[
+        numeric(d, "PitchofPA") == 1
+    ]
 
     first = first[first["_known"]]
+
     if first.empty:
         return None
 
@@ -345,9 +402,9 @@ def first_pitch_strike(d):
     )
 
 
-# ==========================================
-# STRIKEOUTS AND WALKS
-# ==========================================
+# ==================================================
+# PLATE APPEARANCE RESULTS
+# ==================================================
 
 def pa_results(d):
     unavailable = {
@@ -360,7 +417,6 @@ def pa_results(d):
     if "KorBB" not in d.columns:
         return unavailable
 
-    # Require a reliable PA identifier.
     possible = [
         "PlateAppearanceID",
         "PlateAppearanceId",
@@ -400,20 +456,22 @@ def pa_results(d):
     strikeouts = 0
     walks = 0
 
-    for _, group in d.groupby(keys, dropna=False):
+    for _, group in d.groupby(
+        keys,
+        dropna=False,
+    ):
         outcomes = normalized(group, "KorBB")
 
         if outcomes.isin(
             {"strikeout", "k", "so"}
         ).any():
             strikeouts += 1
+
         elif outcomes.isin(
             {"walk", "bb", "baseonballs"}
         ).any():
             walks += 1
 
-    # PA completion cannot be verified from every
-    # type of TrackMan CSV, so K% and BB% remain N/A.
     return {
         "K": strikeouts,
         "BB": walks,
@@ -422,103 +480,307 @@ def pa_results(d):
     }
 
 
-# ==========================================
-# HITTER HEADERS
-# ==========================================
+# ==================================================
+# BENCHMARKS
+# ==================================================
 
-def hitting_headers(data, bottom, top):
-    d = classify(data, bottom, top)
-    rates = batting_rates(d)
+BENCHMARK_COLUMNS = [
+    "season",
+    "level",
+    "role",
+    "metric",
+    "average",
+    "tolerance",
+    "direction",
+    "source",
+]
 
-    cards = {
-        "Pitches Seen": fmt(len(d)),
-        "Swing %": fmt(rates["Swing %"], True),
-        "Whiff %": fmt(rates["Whiff %"], True),
-        "Chase %": fmt(rates["Chase %"], True),
-        "Contact %": fmt(rates["Contact %"], True),
-        "Z-Contact %": fmt(rates["Z-Contact %"], True),
-        "O-Contact %": fmt(rates["O-Contact %"], True),
-        "Hard Contact %": fmt(
-            rates["Hard Contact %"], True
-        ),
-        "Weak Contact %": fmt(
-            rates["Weak Contact %"], True
-        ),
-    }
 
-    metric_cards(cards)
-
-    st.caption(
-        "Contact includes fouls. "
-        "Hard Contact: EV >= 95 mph. "
-        "Weak Contact: EV < 70 mph. "
-        "Zone rates use the approximate strike zone."
+@st.cache_data
+def benchmark_table():
+    path = Path(__file__).with_name(
+        "benchmarks.csv"
     )
 
+    if not path.exists():
+        return pd.DataFrame(
+            columns=BENCHMARK_COLUMNS
+        )
 
-# ==========================================
-# PITCHER HEADERS
-# ==========================================
+    try:
+        table = pd.read_csv(path)
 
-def pitching_headers(data, bottom, top):
+        if not set(BENCHMARK_COLUMNS).issubset(
+            table.columns
+        ):
+            return pd.DataFrame(
+                columns=BENCHMARK_COLUMNS
+            )
+
+        return table
+
+    except Exception:
+        return pd.DataFrame(
+            columns=BENCHMARK_COLUMNS
+        )
+
+
+def reference(metric, role):
+    table = benchmark_table()
+
+    if table.empty:
+        return None
+
+    matches = table.loc[
+        (table["level"].astype(str) == benchmark_level)
+        & (
+            table["season"].astype(str)
+            == str(benchmark_season)
+        )
+        & (
+            table["role"].astype(str).str.lower()
+            == role.lower()
+        )
+        & (table["metric"].astype(str) == metric)
+    ]
+
+    if matches.empty:
+        return None
+
+    row = matches.iloc[0]
+
+    try:
+        avg = float(row["average"])
+        tolerance = abs(float(row["tolerance"]))
+        direction = str(
+            row["direction"]
+        ).lower()
+
+        source = str(row["source"]).strip()
+
+        if (
+            direction not in {"higher", "lower"}
+            or not source
+            or source.lower() == "nan"
+        ):
+            return None
+
+        return avg, tolerance, direction, source
+
+    except (TypeError, ValueError):
+        return None
+
+
+def rating(metric, role, value):
+    ref = reference(metric, role)
+
+    if (
+        ref is None
+        or value is None
+        or pd.isna(value)
+    ):
+        return "No benchmark", "#64748b", None
+
+    avg, tolerance, direction, source = ref
+
+    if abs(value - avg) <= tolerance:
+        return "Average", "#eab308", avg
+
+    good = (
+        value > avg
+        if direction == "higher"
+        else value < avg
+    )
+
+    if good:
+        return "Good", "#dc2626", avg
+
+    return "Poor", "#2563eb", avg
+
+
+# ==================================================
+# METRIC CARDS
+# ==================================================
+
+def metric_cards(items, role):
+    entries = list(items.items())
+
+    for start in range(0, len(entries), 4):
+        cols = st.columns(4)
+
+        for c, (name, value) in zip(
+            cols,
+            entries[start:start + 4],
+        ):
+            c.metric(name, value)
+
+            try:
+                number = float(
+                    str(value)
+                    .replace("%", "")
+                    .replace(",", "")
+                )
+            except (ValueError, TypeError):
+                number = None
+
+            label, color, avg = rating(
+                name,
+                role,
+                number,
+            )
+
+            if avg is None:
+                c.caption("No benchmark")
+            else:
+                c.markdown(
+                    f'<span style="color:{color};'
+                    f'font-weight:700">{label}</span>'
+                    f" · {benchmark_level} avg: {avg:.1f}",
+                    unsafe_allow_html=True,
+                )
+
+
+def metric_table(data, definitions):
+    rows = []
+
+    for field, (label, unit) in definitions.items():
+        values = numeric(
+            data,
+            field,
+        ).dropna()
+
+        if values.empty:
+            continue
+
+        rows.append({
+            "Metric": f"{label} ({unit})",
+            "AVG": round(values.mean(), 2),
+            "MAX": round(values.max(), 2),
+            "MIN": round(values.min(), 2),
+            "Count": len(values),
+        })
+
+    if rows:
+        st.dataframe(
+            pd.DataFrame(rows),
+            hide_index=True,
+            use_container_width=True,
+        )
+    else:
+        st.info("No numeric metrics available.")
+
+
+# ==================================================
+# PITCHER AND BATTER HEADERS
+# ==================================================
+
+def hitting_stats(data, bottom, top):
+    d = classify(data, bottom, top)
+    rates = batting_rates(d)
+    pa = pa_results(d)
+
+    return {
+        "Pitches Seen": fmt(len(d)),
+        "K": fmt(pa["K"]),
+        "BB": fmt(pa["BB"]),
+        **{
+            name: fmt(value, True)
+            for name, value in rates.items()
+        },
+    }
+
+
+def pitching_stats(data, bottom, top):
     d = classify(data, bottom, top)
     rates = batting_rates(d)
     pa = pa_results(d)
 
     known = int(d["_known"].sum())
-    strikes = int(d["_strike"].sum())
-    balls = int(d["_ball"].sum())
 
-    cards = {
+    return {
         "Total Pitches": fmt(len(d)),
-        "Strike %": fmt(pct(strikes, known), True),
-        "Ball %": fmt(pct(balls, known), True),
-        "First Pitch Strike %": fmt(
-            first_pitch_strike(d), True
+        "Strike %": fmt(
+            pct(int(d["_strike"].sum()), known),
+            True,
         ),
-        "Whiff %": fmt(rates["Whiff %"], True),
-        "Chase %": fmt(rates["Chase %"], True),
-        "Strikeouts (K)": fmt(pa["K"]),
-        "Walks (BB)": fmt(pa["BB"]),
+        "Ball %": fmt(
+            pct(int(d["_ball"].sum()), known),
+            True,
+        ),
+        "First Pitch Strike %": fmt(
+            first_pitch_strike(d),
+            True,
+        ),
+        "Whiff %": fmt(
+            rates["Whiff %"],
+            True,
+        ),
+        "Chase %": fmt(
+            rates["Chase %"],
+            True,
+        ),
         "K %": fmt(pa["K %"], True),
         "BB %": fmt(pa["BB %"], True),
-        "Hard Contact Allowed %": fmt(
-            rates["Hard Contact %"], True
-        ),
-        "Weak Contact Allowed %": fmt(
-            rates["Weak Contact %"], True
+        "Weak Contact Generated %": fmt(
+            rates["Weak Contact %"],
+            True,
         ),
     }
 
-    metric_cards(cards)
+
+def hitting_headers(data, bottom, top):
+    metric_cards(
+        hitting_stats(data, bottom, top),
+        "Batter",
+    )
 
     st.caption(
-        "Strike and Ball percentages use recognized "
-        "pitch calls. K and BB require reliable "
-        "plate-appearance identifiers and KorBB. "
-        "Unavailable statistics show N/A."
+        "Contact includes fouls. "
+        "Hard Contact: EV >= 90 mph. "
+        "Medium Contact: 80 to <90 mph. "
+        "Weak Contact: EV <80 mph. "
+        "Zone rates use the approximate strike zone."
     )
 
 
-# ==========================================
+def pitching_headers(data, bottom, top):
+    metric_cards(
+        pitching_stats(data, bottom, top),
+        "Pitcher",
+    )
+
+    st.caption(
+        "Strike and Ball percentages use recognized "
+        "pitch calls. K% and BB% remain N/A when "
+        "completed plate appearances cannot be verified."
+    )
+
+
+# ==================================================
 # MOVEMENT PROFILE
-# ==========================================
+# ==================================================
 
-def movement_profile(data):
-    required = ["HorzBreak", "InducedVertBreak"]
+def movement_figure(data):
+    required = [
+        "HorzBreak",
+        "InducedVertBreak",
+    ]
 
-    if not all(x in data.columns for x in required):
-        st.info("Movement data unavailable.")
-        return
+    if not all(
+        field in data.columns
+        for field in required
+    ):
+        return None
 
     d = data.copy()
+
     for field in required:
         d[field] = numeric(d, field)
 
     d = d.dropna(subset=required)
+
     if d.empty:
-        st.info("No movement data available.")
-        return
+        return None
 
     if "TaggedPitchType" not in d.columns:
         d["TaggedPitchType"] = "Unknown"
@@ -528,8 +790,6 @@ def movement_profile(data):
         .fillna("Unknown")
         .astype(str)
     )
-
-    st.subheader("Movement Profile | Pitcher View")
 
     fig = px.scatter(
         d,
@@ -547,14 +807,22 @@ def movement_profile(data):
         marker=dict(
             size=10,
             opacity=0.85,
-            line=dict(color="white", width=1),
+            line=dict(
+                color="white",
+                width=1,
+            ),
         )
     )
 
-    # Each keyword appears only once.
     fig.update_xaxes(
         range=[-30, 30],
         dtick=5,
+        tickfont=dict(
+            size=17,
+            color="#111827",
+        ),
+        ticks="outside",
+        ticklen=7,
         zeroline=True,
         zerolinewidth=3,
         zerolinecolor="#111827",
@@ -566,6 +834,12 @@ def movement_profile(data):
     fig.update_yaxes(
         range=[-30, 30],
         dtick=5,
+        tickfont=dict(
+            size=17,
+            color="#111827",
+        ),
+        ticks="outside",
+        ticklen=7,
         zeroline=True,
         zerolinewidth=3,
         zerolinecolor="#111827",
@@ -577,12 +851,32 @@ def movement_profile(data):
     )
 
     fig.update_layout(
-        height=680,
+        height=760,
         plot_bgcolor="white",
         paper_bgcolor="white",
-        font=dict(color="#111827"),
+        font=dict(
+            color="#111827",
+            size=15,
+        ),
         legend_title="Pitch Type",
-        legend=dict(orientation="h", y=1.08),
+        legend=dict(
+            orientation="h",
+            y=1.08,
+        ),
+    )
+
+    return fig
+
+
+def movement_profile(data):
+    fig = movement_figure(data)
+
+    if fig is None:
+        st.info("Movement data unavailable.")
+        return
+
+    st.subheader(
+        "Movement Profile | Pitcher View"
     )
 
     st.plotly_chart(
@@ -590,40 +884,77 @@ def movement_profile(data):
         use_container_width=True,
     )
 
-
-# ==========================================
-# STRIKE ZONE
-# ==========================================
-
-def strike_zone_chart(data, bottom, top):
-    required = ["PlateLocSide", "PlateLocHeight"]
-
-    if not all(x in data.columns for x in required):
-        st.info("Pitch locations unavailable.")
-        return
+    st.caption(
+        "Both axes are in inches. "
+        "Major tick marks are 5 inches apart."
+    )
 
     d = data.copy()
+
+    d["HorzBreak"] = numeric(
+        d,
+        "HorzBreak",
+    )
+
+    d["InducedVertBreak"] = numeric(
+        d,
+        "InducedVertBreak",
+    )
+
+    d = d.dropna(
+        subset=[
+            "HorzBreak",
+            "InducedVertBreak",
+        ]
+    )
+
+    if "TaggedPitchType" not in d.columns:
+        d["TaggedPitchType"] = "Unknown"
+
+    averages = (
+        d.groupby("TaggedPitchType", dropna=False)
+        .agg(
+            Pitches=("HorzBreak", "size"),
+            Avg_HB=("HorzBreak", "mean"),
+            Avg_IVB=("InducedVertBreak", "mean"),
+        )
+        .reset_index()
+    )
+
+    st.dataframe(
+        averages.round(1),
+        hide_index=True,
+        use_container_width=True,
+    )
+
+
+# ==================================================
+# STRIKE ZONE
+# ==================================================
+
+def strike_zone_figure(data, bottom, top):
+    required = [
+        "PlateLocSide",
+        "PlateLocHeight",
+    ]
+
+    if not all(
+        field in data.columns
+        for field in required
+    ):
+        return None
+
+    d = data.copy()
+
     for field in required:
         d[field] = numeric(d, field)
 
     d = d.dropna(subset=required)
 
     if d.empty:
-        st.info("No pitch locations available.")
-        return
+        return None
 
     classified = classify(d, bottom, top)
-    inside = classified["_zone"]
-
-    st.subheader("Pitch Location | Strike Zone")
-
-    a, b, c = st.columns(3)
-    a.metric("In Zone", int(inside.sum()))
-    b.metric("Out of Zone", int((~inside).sum()))
-    c.metric(
-        "Zone %",
-        fmt(pct(int(inside.sum()), len(d)), True),
-    )
 
     fig = go.Figure()
 
@@ -633,15 +964,22 @@ def strike_zone_chart(data, bottom, top):
         x1=ZONE_HALF_WIDTH,
         y0=bottom,
         y1=top,
-        line=dict(color="#334155", width=3),
+        line=dict(
+            color="#334155",
+            width=3,
+        ),
         fillcolor="rgba(148,163,184,0.10)",
     )
 
     for i in [1, 2]:
-        x = -ZONE_HALF_WIDTH + (
-            2 * ZONE_HALF_WIDTH * i / 3
+        x = (
+            -ZONE_HALF_WIDTH
+            + 2 * ZONE_HALF_WIDTH * i / 3
         )
-        y = bottom + (top - bottom) * i / 3
+
+        y = bottom + (
+            top - bottom
+        ) * i / 3
 
         fig.add_shape(
             type="line",
@@ -649,7 +987,10 @@ def strike_zone_chart(data, bottom, top):
             x1=x,
             y0=bottom,
             y1=top,
-            line=dict(color="#94a3b8", dash="dot"),
+            line=dict(
+                color="#94a3b8",
+                dash="dot",
+            ),
         )
 
         fig.add_shape(
@@ -658,10 +999,13 @@ def strike_zone_chart(data, bottom, top):
             x1=ZONE_HALF_WIDTH,
             y0=y,
             y1=y,
-            line=dict(color="#94a3b8", dash="dot"),
+            line=dict(
+                color="#94a3b8",
+                dash="dot",
+            ),
         )
 
-    d["_zone_label"] = inside.map({
+    d["_zone_label"] = classified["_zone"].map({
         True: "In Zone",
         False: "Out of Zone",
     })
@@ -682,7 +1026,10 @@ def strike_zone_chart(data, bottom, top):
                     color=color,
                     size=10,
                     opacity=0.85,
-                    line=dict(color="white", width=1),
+                    line=dict(
+                        color="white",
+                        width=1,
+                    ),
                 ),
             )
         )
@@ -705,6 +1052,46 @@ def strike_zone_chart(data, bottom, top):
         ),
     )
 
+    return fig
+
+
+def strike_zone_chart(data, bottom, top):
+    fig = strike_zone_figure(
+        data,
+        bottom,
+        top,
+    )
+
+    if fig is None:
+        st.info("Pitch locations unavailable.")
+        return
+
+    classified = classify(
+        data,
+        bottom,
+        top,
+    )
+
+    located = classified[
+        classified["_located"]
+    ]
+
+    inside = int(located["_zone"].sum())
+    outside = len(located) - inside
+
+    st.subheader(
+        "Pitch Location | Strike Zone"
+    )
+
+    a, b, c = st.columns(3)
+
+    a.metric("In Zone", inside)
+    b.metric("Out of Zone", outside)
+    c.metric(
+        "Zone %",
+        fmt(pct(inside, len(located)), True),
+    )
+
     st.plotly_chart(
         fig,
         use_container_width=True,
@@ -712,15 +1099,395 @@ def strike_zone_chart(data, bottom, top):
 
     st.caption(
         "Blue = inside approximate zone. "
-        "Red = outside. Not an official umpire call."
+        "Red = outside. "
+        "Not an official umpire call."
     )
 
 
-# ==========================================
+# ==================================================
+# PDF REPORT
+# ==================================================
+
+def pdf_report(player, role, data, bottom, top):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        Table,
+        TableStyle,
+        Image,
+    )
+
+    buffer = io.BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=38,
+        rightMargin=38,
+        topMargin=38,
+        bottomMargin=38,
+    )
+
+    styles = getSampleStyleSheet()
+
+    elements = [
+        Paragraph(
+            "TrackMan Scouting Analytics",
+            styles["Title"],
+        ),
+        Paragraph(
+            f"{escape(str(player))} | "
+            f"{escape(role)} | "
+            f"{escape(benchmark_level)} "
+            f"{benchmark_season}",
+            styles["Heading2"],
+        ),
+        Paragraph(
+            f"Pitches in selected data: {len(data):,}",
+            styles["Normal"],
+        ),
+        Spacer(1, 12),
+    ]
+
+    if "Date" in data.columns:
+        dates = (
+            data["Date"]
+            .dropna()
+            .astype(str)
+            .unique()
+        )
+
+        if len(dates):
+            elements.append(
+                Paragraph(
+                    "Session dates: "
+                    + escape(", ".join(sorted(dates))),
+                    styles["Normal"],
+                )
+            )
+
+            elements.append(Spacer(1, 10))
+
+    if role == "Pitcher":
+        stats = pitching_stats(
+            data,
+            bottom,
+            top,
+        )
+        definitions = PITCH_METRICS
+    else:
+        stats = hitting_stats(
+            data,
+            bottom,
+            top,
+        )
+        definitions = HITTER_METRICS
+
+    rows = [[
+        "Metric",
+        "Player",
+        "Level Avg",
+        "Rating",
+    ]]
+
+    ratings = []
+
+    for metric, value in stats.items():
+        try:
+            number = float(
+                str(value)
+                .replace("%", "")
+                .replace(",", "")
+            )
+        except (TypeError, ValueError):
+            number = None
+
+        label, color, avg = rating(
+            metric,
+            role,
+            number,
+        )
+
+        avg_text = (
+            "N/A"
+            if avg is None
+            else f"{avg:.1f}"
+        )
+
+        rows.append([
+            metric,
+            str(value),
+            avg_text,
+            label,
+        ])
+
+        ratings.append(color)
+
+    table = Table(
+        rows,
+        colWidths=[205, 85, 90, 95],
+        repeatRows=1,
+    )
+
+    commands = [
+        (
+            "BACKGROUND",
+            (0, 0),
+            (-1, 0),
+            colors.HexColor("#e2e8f0"),
+        ),
+        (
+            "FONTNAME",
+            (0, 0),
+            (-1, 0),
+            "Helvetica-Bold",
+        ),
+        (
+            "GRID",
+            (0, 0),
+            (-1, -1),
+            0.3,
+            colors.HexColor("#cbd5e1"),
+        ),
+        (
+            "FONTSIZE",
+            (0, 0),
+            (-1, -1),
+            8,
+        ),
+        (
+            "VALIGN",
+            (0, 0),
+            (-1, -1),
+            "MIDDLE",
+        ),
+        (
+            "BOTTOMPADDING",
+            (0, 0),
+            (-1, -1),
+            7,
+        ),
+    ]
+
+    for index, color in enumerate(
+        ratings,
+        start=1,
+    ):
+        commands.append((
+            "TEXTCOLOR",
+            (3, index),
+            (3, index),
+            colors.HexColor(color),
+        ))
+
+    table.setStyle(
+        TableStyle(commands)
+    )
+
+    elements.extend([
+        table,
+        Spacer(1, 15),
+        Paragraph(
+            "Measured Metrics",
+            styles["Heading2"],
+        ),
+    ])
+
+    metric_rows = [[
+        "Metric",
+        "Average",
+        "Minimum",
+        "Maximum",
+        "Count",
+    ]]
+
+    for field, (label, unit) in definitions.items():
+        values = numeric(
+            data,
+            field,
+        ).dropna()
+
+        if values.empty:
+            continue
+
+        metric_rows.append([
+            f"{label} ({unit})",
+            f"{values.mean():.2f}",
+            f"{values.min():.2f}",
+            f"{values.max():.2f}",
+            str(len(values)),
+        ])
+
+    if len(metric_rows) > 1:
+        metrics_table = Table(
+            metric_rows,
+            colWidths=[185, 75, 75, 75, 65],
+            repeatRows=1,
+        )
+
+        metrics_table.setStyle(
+            TableStyle([
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (-1, 0),
+                    colors.HexColor("#e2e8f0"),
+                ),
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.3,
+                    colors.grey,
+                ),
+                (
+                    "FONTSIZE",
+                    (0, 0),
+                    (-1, -1),
+                    8,
+                ),
+            ])
+        )
+
+        elements.append(metrics_table)
+
+    figures = []
+
+    if role == "Pitcher":
+        figures.append((
+            "Pitch Movement | Pitcher View",
+            movement_figure(data),
+        ))
+
+    figures.append((
+        "Strike Zone",
+        strike_zone_figure(
+            data,
+            bottom,
+            top,
+        ),
+    ))
+
+    for title, fig in figures:
+        if fig is None:
+            continue
+
+        try:
+            png = fig.to_image(
+                format="png",
+                scale=2,
+            )
+
+            elements.extend([
+                Spacer(1, 15),
+                Paragraph(
+                    title,
+                    styles["Heading2"],
+                ),
+                Image(
+                    io.BytesIO(png),
+                    width=470,
+                    height=350,
+                ),
+            ])
+
+        except Exception:
+            elements.extend([
+                Spacer(1, 10),
+                Paragraph(
+                    f"{title}: image unavailable "
+                    "on this server.",
+                    styles["Normal"],
+                ),
+            ])
+
+    elements.extend([
+        Spacer(1, 12),
+        Paragraph(
+            "Contact thresholds: "
+            "Hard >=90 mph; "
+            "Medium 80 to <90 mph; "
+            "Weak <80 mph.",
+            styles["Normal"],
+        ),
+        Paragraph(
+            "Benchmarks appear only when a "
+            "sourced reference is available.",
+            styles["Normal"],
+        ),
+    ])
+
+    doc.build(elements)
+
+    return buffer.getvalue()
+
+
+def download_report(
+    player,
+    role,
+    data,
+    bottom,
+    top,
+):
+    try:
+        output = pdf_report(
+            player,
+            role,
+            data,
+            bottom,
+            top,
+        )
+
+        safe_name = "".join(
+            c if c.isalnum() or c in "-_"
+            else "_"
+            for c in str(player)
+        )
+
+        st.download_button(
+            "Download Full Scouting Report (PDF)",
+            data=output,
+            file_name=(
+                f"{safe_name}_"
+                f"{role.lower()}_report.pdf"
+            ),
+            mime="application/pdf",
+        )
+
+    except Exception as exc:
+        st.error(
+            f"PDF generation failed: {exc}"
+        )
+
+
+# ==================================================
 # SIDEBAR
-# ==========================================
+# ==================================================
 
 st.sidebar.header("Analysis Settings")
+
+benchmark_level = st.sidebar.selectbox(
+    "Benchmark Level",
+    LEVELS,
+)
+
+benchmark_season = st.sidebar.number_input(
+    "Benchmark Season",
+    min_value=2020,
+    max_value=2035,
+    value=2026,
+    step=1,
+)
+
+if benchmark_table().empty:
+    st.sidebar.caption(
+        "No sourced benchmark data installed yet. "
+        "Ratings will show No benchmark."
+    )
 
 zone_bottom = st.sidebar.number_input(
     "Strike Zone Bottom (ft)",
@@ -753,12 +1520,15 @@ pages = [
     "CSV Upload",
 ]
 
-page = st.sidebar.radio("Navigation", pages)
+page = st.sidebar.radio(
+    "Navigation",
+    pages,
+)
 
 
-# ==========================================
+# ==================================================
 # CSV UPLOAD
-# ==========================================
+# ==================================================
 
 if page == "CSV Upload":
     st.header("Upload TrackMan CSV")
@@ -771,37 +1541,51 @@ if page == "CSV Upload":
     if uploaded is not None:
         try:
             file_bytes = uploaded.getvalue()
+
             fingerprint = hashlib.sha256(
                 file_bytes
             ).hexdigest()
 
             if (
-                st.session_state.get("last_upload_attempt")
+                st.session_state.get(
+                    "last_upload_attempt"
+                )
                 != fingerprint
             ):
                 status, count = import_csv(
-                    sb, file_bytes, uploaded.name
+                    sb,
+                    file_bytes,
+                    uploaded.name,
                 )
 
                 st.session_state.last_upload_attempt = (
                     fingerprint
                 )
-                st.session_state.trackman_data = load_all(sb)
+
+                st.session_state.trackman_data = (
+                    load_all(sb)
+                )
 
                 if status == "duplicate":
                     st.info(
-                        "CSV already exists. No duplicates added."
+                        "CSV already exists. "
+                        "No duplicates added."
                     )
                 else:
                     st.success(
                         f"CSV saved: {count:,} pitches."
                     )
+
             else:
                 st.info(
-                    "File already processed in this session."
+                    "File already processed "
+                    "in this session."
                 )
 
-            saved = st.session_state.trackman_data
+            saved = (
+                st.session_state.trackman_data
+            )
+
             if saved is not None:
                 st.dataframe(
                     saved.tail(20),
@@ -809,8 +1593,14 @@ if page == "CSV Upload":
                 )
 
         except Exception as error:
-            st.error(f"CSV import failed: {error}")
+            st.error(
+                f"CSV import failed: {error}"
+            )
 
+
+# ==================================================
+# LOAD DATA
+# ==================================================
 
 df = st.session_state.trackman_data
 
@@ -823,24 +1613,32 @@ if page != "CSV Upload":
         st.stop()
 
 
-# ==========================================
+# ==================================================
 # OVERVIEW
-# ==========================================
+# ==================================================
 
 if page == "Overview":
     st.header("Overview")
 
     a, b, c = st.columns(3)
-    a.metric("Total Records", len(df))
+
+    a.metric(
+        "Total Records",
+        len(df),
+    )
+
     b.metric(
         "Pitchers",
         df["Pitcher"].nunique()
-        if "Pitcher" in df.columns else 0,
+        if "Pitcher" in df.columns
+        else 0,
     )
+
     c.metric(
         "Batters",
         df["Batter"].nunique()
-        if "Batter" in df.columns else 0,
+        if "Batter" in df.columns
+        else 0,
     )
 
     if "TaggedPitchType" in df.columns:
@@ -868,37 +1666,58 @@ if page == "Overview":
         )
 
 
-# ==========================================
+# ==================================================
 # PITCHER ANALYTICS
-# ==========================================
+# ==================================================
 
 elif page == "Pitcher Analytics":
     st.header("Pitcher Analytics")
 
     pitcher = choose_player(
-        df, "Pitcher", "pitcher_analytics"
+        df,
+        "Pitcher",
+        "pitcher_analytics",
     )
 
     d = df[
         df["Pitcher"].astype(str) == pitcher
     ].copy()
 
-    d = date_filter(d, "pitcher_date")
+    d = date_filter(
+        d,
+        "pitcher_date",
+    )
+
     d, pitch_type = pitch_filter(
-        d, "pitcher_pitch_type"
+        d,
+        "pitcher_pitch_type",
     )
 
     st.subheader(pitcher)
-    pitching_headers(d, zone_bottom, zone_top)
 
-    st.subheader(f"Pitch Metrics | {pitch_type}")
-    metric_table(d, PITCH_METRICS)
+    pitching_headers(
+        d,
+        zone_bottom,
+        zone_top,
+    )
+
+    st.subheader(
+        f"Pitch Metrics | {pitch_type}"
+    )
+
+    metric_table(
+        d,
+        PITCH_METRICS,
+    )
 
     if "RelSpeed" in d.columns:
         velocity = d.copy()
+
         velocity["RelSpeed"] = numeric(
-            velocity, "RelSpeed"
+            velocity,
+            "RelSpeed",
         )
+
         velocity = velocity.dropna(
             subset=["RelSpeed"]
         )
@@ -907,7 +1726,9 @@ elif page == "Pitcher Analytics":
             if "TaggedPitchType" not in velocity.columns:
                 velocity["TaggedPitchType"] = "Unknown"
 
-            st.subheader("Velocity by Pitch Type")
+            st.subheader(
+                "Velocity by Pitch Type"
+            )
 
             fig = px.box(
                 velocity,
@@ -925,34 +1746,64 @@ elif page == "Pitcher Analytics":
 
     movement_profile(d)
 
+    download_report(
+        pitcher,
+        "Pitcher",
+        d,
+        zone_bottom,
+        zone_top,
+    )
 
-# ==========================================
+
+# ==================================================
 # HITTER ANALYTICS
-# ==========================================
+# ==================================================
 
 elif page == "Hitter Analytics":
     st.header("Hitter Analytics")
 
     batter = choose_player(
-        df, "Batter", "hitter_analytics"
+        df,
+        "Batter",
+        "hitter_analytics",
     )
 
     d = df[
         df["Batter"].astype(str) == batter
     ].copy()
 
-    d = date_filter(d, "hitter_date")
+    d = date_filter(
+        d,
+        "hitter_date",
+    )
 
     st.subheader(batter)
-    hitting_headers(d, zone_bottom, zone_top)
+
+    hitting_headers(
+        d,
+        zone_bottom,
+        zone_top,
+    )
 
     st.subheader("Hitting Metrics")
-    metric_table(d, HITTER_METRICS)
+
+    metric_table(
+        d,
+        HITTER_METRICS,
+    )
+
+    download_report(
+        batter,
+        "Batter",
+        d,
+        zone_bottom,
+        zone_top,
+    )
 
 
-# ==========================================
+# ==================================================
 # PLAYER PROFILES
-# ==========================================
+# ==================================================
 
 elif page == "Player Profiles":
     st.header("Player Profiles")
@@ -961,6 +1812,7 @@ elif page == "Player Profiles":
         "Player Role",
         ["Pitcher", "Batter"],
         horizontal=True,
+        key="profile_role",
     )
 
     player = choose_player(
@@ -982,34 +1834,77 @@ elif page == "Player Profiles":
 
     if role == "Pitcher":
         st.subheader("Pitching Profile")
-        pitching_headers(d, zone_bottom, zone_top)
-        metric_table(d, PITCH_METRICS)
+
+        pitching_headers(
+            d,
+            zone_bottom,
+            zone_top,
+        )
+
+        metric_table(
+            d,
+            PITCH_METRICS,
+        )
+
         movement_profile(d)
+
     else:
         st.subheader("Hitting Profile")
-        hitting_headers(d, zone_bottom, zone_top)
-        metric_table(d, HITTER_METRICS)
+
+        hitting_headers(
+            d,
+            zone_bottom,
+            zone_top,
+        )
+
+        metric_table(
+            d,
+            HITTER_METRICS,
+        )
+
+    download_report(
+        player,
+        role,
+        d,
+        zone_bottom,
+        zone_top,
+    )
 
 
-# ==========================================
+# ==================================================
 # STRIKE ZONE
-# ==========================================
+# ==================================================
 
 elif page == "Strike Zone":
     st.header("Strike Zone")
 
     pitcher = choose_player(
-        df, "Pitcher", "strike_zone_pitcher"
+        df,
+        "Pitcher",
+        "strike_zone_pitcher",
     )
 
     d = df[
         df["Pitcher"].astype(str) == pitcher
     ].copy()
 
-    d = date_filter(d, "strike_zone_date")
-    d, pitch_type = pitch_filter(
-        d, "strike_zone_pitch_type"
+    d = date_filter(
+        d,
+        "strike_zone_date",
     )
 
-    st.metric("Selected Pitches", len(d))
-    strike_zone_chart(d, zone_bottom, zone_top)
+    d, pitch_type = pitch_filter(
+        d,
+        "strike_zone_pitch_type",
+    )
+
+    st.metric(
+        "Selected Pitches",
+        len(d),
+    )
+
+    strike_zone_chart(
+        d,
+        zone_bottom,
+        zone_top,
+    )
