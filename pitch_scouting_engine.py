@@ -28,7 +28,7 @@ def summaries(df):
     if not rows:return [],[]
     primary=next((p for p in rows if p["name"] in ("Four-Seam Fastball","Sinker")),rows[0])
     v=primary["v"]
-    overall=[f"The selected sample contains {len(df):,} pitches and {len(rows)} tagged pitch types. The most-used primary fastball is {primary['name']} ({primary['n']} pitches), averaging {display(v['RelSpeed'])} mph, {display(v['InducedVertBreak'])} inches IVB and {display(v['HorzBreak'])} inches HB."]
+    overall=[f"The selected sample contains {len(df):,} pitches and {len(rows)} tagged pitch types. The primary fastball selected for comparison is {primary['name']} ({primary['n']} pitches), averaging {display(v['RelSpeed'])} mph, {display(v['InducedVertBreak'])} inches IVB and {display(v['HorzBreak'])} inches HB."]
     for p in rows:
         if p is primary:continue
         q=p["v"];dif=[]
@@ -45,14 +45,20 @@ def summaries(df):
     for p in rows:
         q=p["v"]
         desc=f"{p['n']} pitches. "+", ".join(f"{label}: {display(q[field])} {unit}" for field,label,unit in METRICS)+". "
-        if p["name"]=="Four-Seam Fastball" and q["InducedVertBreak"] is not None:
-            if q["InducedVertBreak"]<14:
-                desc+="The fastball shows relatively limited induced vertical break compared with typical MLB four-seam shapes (potentially flat). "
-            elif q["InducedVertBreak"]>=18:
-                desc+="The fastball shows substantial induced vertical break (carry); effectiveness is not established by IVB alone. "
-            else:desc+="The fastball shows intermediate induced vertical break; a matched arm-slot comparison is required. "
+        if p["name"]=="Four-Seam Fastball":
+            desc+="Four-seam carry is represented by induced vertical break. A flat/low-carry designation requires a verified same-pitch reference; IVB alone cannot establish pitch effectiveness. "
+        elif p["name"]=="Sinker":
+            desc+="Sinker movement is evaluated for arm-side run and sink relative to a same-handed pitch-type reference; direction cannot be assigned without confirming the TrackMan horizontal sign convention. "
+        elif p["name"]=="Cutter":
+            desc+="Cutter movement is evaluated for glove-side cutting action and separation from the primary fastball; effectiveness requires observed outcomes. "
+        elif p["name"] in ("Slider","Sweeper"):
+            desc+="Breaking-ball shape is evaluated for horizontal sweep, vertical depth, and fastball separation; the observed outcome sample determines effectiveness evidence. "
+        elif p["name"] in ("Curveball","Knuckle Curve"):
+            desc+="Curveball shape is evaluated for vertical depth and lateral break; the magnitude of IVB should not be graded like a four-seam fastball. "
+        elif p["name"] in ("Changeup","Splitter","Forkball"):
+            desc+="Offspeed shape is evaluated for velocity separation, induced vertical break and horizontal fade or tumble; direction requires confirmed handedness conventions. "
         else:
-            desc+="Evaluate its vertical and horizontal movement relative to the same pitch type and a comparable release profile; the movement alone cannot establish effectiveness. "
+            desc+="Movement shape requires a pitch-type-matched reference and verified coordinate conventions. "
         if p["whiff_pct"] is not None:
             desc+=f"Observed Whiff%: {p['whiff_pct']:.1f}% ({p['whiffs']} misses / {p['swings']} swings). "
         else:desc+="Observed Whiff%: unavailable (no recorded swings). "
