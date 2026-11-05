@@ -1,0 +1,22 @@
+name: Scouting Report Tests
+on:
+  push:
+    branches:
+      - feature/scouting-pdf-movement-summary-2026
+  pull_request:
+    branches:
+      - main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install report dependencies
+        run: pip install pandas reportlab
+      - name: Compile Python sources
+        run: python -m compileall -q streamlit_app.py pitch_scouting_engine.py supabase_store.py
+      - name: Test scouting summaries
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
