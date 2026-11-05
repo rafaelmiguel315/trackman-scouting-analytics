@@ -1421,6 +1421,35 @@ def pdf_report(player, role, data, bottom, top):
         ),
     ])
 
+    if role == "Pitcher":
+        from pitch_scouting_engine import summaries
+        overall, details = summaries(data)
+        if overall:
+            elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Pitching Assessment | Arsenal Separation &amp; Deception", styles["Heading2"])])
+            for paragraph in overall:
+                elements.extend([Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 7)])
+            elements.append(Paragraph("Pitch-by-Pitch Movement Analysis", styles["Heading2"]))
+            for pitch_name, paragraph in details:
+                elements.extend([Paragraph(escape(pitch_name), styles["Heading3"]), Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 8)])
+            elements.append(Paragraph("Reference scope: player averages use selected TrackMan pitches. MLB/MiLB 2025-2026 adjusted percentiles are withheld until a matched, validated reference dataset is installed. No inferred deception or effectiveness grade is presented as observed fact.", styles["Normal"]))
+
+    if role == "Batter":
+        elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Hitting Assessment", styles["Heading2"])])
+        ev = pd.to_numeric(data["ExitSpeed"], errors="coerce").dropna() if "ExitSpeed" in data else pd.Series(dtype=float)
+        angle = pd.to_numeric(data["Angle"], errors="coerce").dropna() if "Angle" in data else pd.Series(dtype=float)
+        lines = [f"The selected sample contains {len(data):,} tracked pitches. Average exit velocity: {ev.mean():.1f} mph across {len(ev)} recorded exit velocities." if len(ev) else f"The selected sample contains {len(data):,} tracked pitches. Exit velocity data are unavailable."]
+        if len(angle):
+            lines.append(f"Average launch angle: {angle.mean():.1f} degrees across {len(angle)} recorded launch angles.")
+        hitter_calls = classify(data, bottom, top)
+        hitter_rates = batting_rates(hitter_calls)
+        for metric in ("Whiff %", "Chase %", "Hard Contact %", "Weak Contact %"):
+            value = hitter_rates.get(metric)
+            if value is not None and not pd.isna(value):
+                lines.append(f"Observed {metric}: {value:.1f}% in the selected sample.")
+        lines.append("These outcomes describe the selected TrackMan sample, not projected major-league hitting effectiveness. Small samples, competition level, pitch mix and missing observations limit conclusions.")
+        for line in lines:
+            elements.extend([Paragraph(escape(line), styles["Normal"]), Spacer(1, 7)])
+
     doc.build(elements)
 
     return buffer.getvalue()
@@ -1688,6 +1717,7 @@ elif page == "Pitcher Analytics":
         "pitcher_date",
     )
 
+    report_data = d.copy()  # All pitch types for the selected player/date.
     d, pitch_type = pitch_filter(
         d,
         "pitcher_pitch_type",
@@ -1746,10 +1776,11 @@ elif page == "Pitcher Analytics":
 
     movement_profile(d)
 
+    st.caption("The PDF includes the full pitch arsenal for the selected player and session dates, even when a single pitch type is selected in the chart filter.")
     download_report(
         pitcher,
         "Pitcher",
-        d,
+        report_data,
         zone_bottom,
         zone_top,
     )
