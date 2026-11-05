@@ -18,6 +18,8 @@ def load_report_function():
         "io": io, "escape": escape, "pd": pd,
         "benchmark_level": "MLB", "benchmark_season": 2026,
         "benchmark_season_mode": "2025 + 2026 (available data)",
+        "demo_mode": True,
+        "visual_grade": lambda value, metric, role: ("AVERAGE · DEMO", "#eab308", 50),
         "PITCH_COLORS": {"FF": "#2563eb", "SL": "#ef4444"},
         "PITCH_METRICS": {"RelSpeed": ("Velocity", "mph"), "InducedVertBreak": ("IVB", "in")},
         "HITTER_METRICS": {"ExitSpeed": ("Exit Velocity", "mph")},
@@ -57,7 +59,7 @@ class PdfReportIntegrationTests(unittest.TestCase):
         payload = report("Sample Pitcher", "Pitcher", df, 1.5, 3.5)
         self.assertTrue(payload.startswith(b"%PDF"))
         extracted = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(payload)).pages)
-        for phrase in ("Sample Pitcher", "PLAYER SCOUTING SUMMARY", "Four-Seam Fastball", "Slider", "Pitch-by-pitch explanation"):
+        for phrase in ("Sample Pitcher", "AT A GLANCE", "Four-Seam Fastball", "Slider", "QUICK DEFINITIONS", "DEMO PREVIEW"):
             self.assertIn(phrase, extracted)
 
     def test_batter_pdf_contains_hitting_summary(self):
@@ -70,7 +72,7 @@ class PdfReportIntegrationTests(unittest.TestCase):
         payload = report("Sample Batter", "Batter", df, 1.5, 3.5)
         self.assertTrue(payload.startswith(b"%PDF"))
         extracted = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(payload)).pages)
-        self.assertIn("Overall Hitting Assessment", extracted)
+        self.assertIn("HITTING SNAPSHOT", extracted)
         self.assertIn("91.0 mph", extracted)
 
 
