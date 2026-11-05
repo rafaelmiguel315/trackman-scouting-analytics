@@ -2,7 +2,7 @@
 import pandas as pd
 
 NAMES={"FF":"Four-Seam Fastball","FA":"Four-Seam Fastball","SI":"Sinker","FT":"Sinker","FC":"Cutter","SL":"Slider","ST":"Sweeper","CB":"Curveball","KC":"Knuckle Curve","CH":"Changeup","FS":"Splitter","FO":"Forkball"}
-METRICS=[("RelSpeed","Velocity","mph"),("InducedVertBreak","IVB","in"),("HorzBreak","HB","in"),("SpinRate","Spin Rate","rpm"),("VertApprAngle","VAA","deg"),("RelHeight","Release Height","ft"),("RelSide","Release Side","ft"),("Extension","Extension","ft")]
+METRICS=[("RelSpeed","Velocity","mph"),("InducedVertBreak","IVB","in"),("HorzBreak","HB","in"),("SpinRate","Spin Rate","rpm"),("SpinEfficiency","Spin Efficiency","%"),("VertApprAngle","VAA","deg"),("RelHeight","Release Height","ft"),("RelSide","Release Side","ft"),("Extension","Extension","ft")]
 def mean(df,key):
     if key not in df:return None
     s=pd.to_numeric(df[key],errors="coerce").dropna()
@@ -22,6 +22,8 @@ def pitch_rows(df):
     for tag,group in prepared.groupby("_normalized_pitch",dropna=True):
         if not str(tag).strip() or str(tag).strip().lower() in ("nan","none","unknown"):continue
         vals={key:mean(group,key) for key,_,_ in METRICS}
+        if vals["SpinEfficiency"] is None:
+            vals["SpinEfficiency"]=mean(group,"SpinAxis3dSpinEfficiency")
         calls=group["PitchCall"].fillna("").astype(str).str.lower().str.replace(r"[^a-z]","",regex=True) if "PitchCall" in group else pd.Series([],dtype=str)
         swing=calls.isin(["strikeswinging","swingingstrike","swingingstrikewildpitch","swingingstrikeblocked","foulball","foul","foulballfieldable","foulballnotfieldable","foultip","inplay","ballinplay","inplayout","inplayrun","inplaynoout","foulbunt","strikebunt"])
         whiff=calls.isin(["strikeswinging","swingingstrike","swingingstrikewildpitch","swingingstrikeblocked"])
@@ -66,6 +68,8 @@ def summaries(df):
             desc+="Movement shape requires a pitch-type-matched reference and verified coordinate conventions. "
         if p["whiff_pct"] is not None:
             desc+=f"Observed Whiff%: {p['whiff_pct']:.1f}% ({p['whiffs']} misses / {p['swings']} swings). "
+            if p["swings"]<20:
+                desc+="Small swing sample (fewer than 20); effectiveness is not reliably established. "
         else:desc+="Observed Whiff%: unavailable (no recorded swings). "
         desc+="MLB/MiLB adjusted grade: insufficient validated reference data."
         detail.append((p["name"],desc))
