@@ -25,8 +25,40 @@ st.set_page_config(
 
 sb = authenticate()
 
-st.title("⚾ TrackMan Scouting Analytics")
-st.caption("International Scouting | Video & Data")
+st.markdown("""
+<style>
+.block-container {max-width: 1500px; padding-top: 1.45rem; padding-bottom: 3rem;}
+h1 {font-size: 2rem !important; letter-spacing: -.035em; font-weight: 760 !important;}
+h2 {font-size: 1.42rem !important; letter-spacing: -.02em; margin-top: 1.65rem !important;}
+h3 {font-size: 1.12rem !important; letter-spacing: -.01em;}
+[data-testid="stSidebar"] {border-right: 1px solid rgba(148,163,184,.18);}
+[data-testid="stSidebar"] .block-container {padding-top: 1.25rem;}
+[data-testid="stVerticalBlock"] {gap: .75rem;}
+[data-testid="stSelectbox"] label, [data-testid="stNumberInput"] label {
+  font-size: .82rem; font-weight: 600;
+}
+[data-testid="stDataFrame"] {border-radius: 10px; overflow: hidden;}
+[data-testid="stPlotlyChart"] {border: 1px solid rgba(148,163,184,.18);
+  border-radius: 12px; padding: 8px; overflow: hidden;}
+[data-testid="stDownloadButton"] button {border-radius: 9px; font-weight: 650;}
+.scout-header {padding: 4px 0 13px; margin-bottom: 10px;
+  border-bottom: 1px solid rgba(148,163,184,.22);}
+.scout-eyebrow {font-size: .72rem; letter-spacing: .13em;
+  font-weight: 750; color: #60a5fa; text-transform: uppercase;}
+.scout-title {font-size: clamp(1.55rem, 2.4vw, 2.1rem);
+  font-weight: 790; letter-spacing: -.035em; line-height: 1.25; margin: 5px 0;}
+.scout-subtitle {font-size: .86rem; color: #94a3b8;}
+@media (max-width: 850px) {
+  .block-container {padding-left: 1rem; padding-right: 1rem;}
+  .scout-title {font-size: 1.5rem;}
+}
+</style>
+<div class="scout-header">
+  <div class="scout-eyebrow">International Scouting · Video & Data</div>
+  <div class="scout-title">⚾ TrackMan Scouting Analytics</div>
+  <div class="scout-subtitle">Player performance · Pitch profiles · Session reports</div>
+</div>
+""", unsafe_allow_html=True)
 
 if "trackman_data" not in st.session_state:
     st.session_state.trackman_data = load_all(sb)
@@ -650,11 +682,11 @@ def metric_cards(items, role):
                 subtitle = "Measured · no verified comparison"
             c.markdown(
                 '<div style="background:' + shade + ';border-left:5px solid ' + accent
-                + ';border-radius:9px;padding:12px 14px;margin:4px 0 12px;min-height:115px;'
+                + ';border-radius:11px;padding:11px 13px;margin:4px 0 9px;min-height:108px;box-shadow:0 2px 9px rgba(15,23,42,.06);'
                 + 'color:#172033;box-sizing:border-box">'
-                + '<div style="font-size:13px;font-weight:600;line-height:1.3">'
+                + '<div style="font-size:12px;font-weight:650;line-height:1.3">'
                 + escape(str(name)) + '</div>'
-                + '<div style="font-size:25px;font-weight:700;line-height:1.55">'
+                + '<div style="font-size:23px;font-weight:750;line-height:1.55">'
                 + escape(str(value)) + '</div>'
                 + '<div style="font-size:11px;line-height:1.35;color:' + accent + '">'
                 + escape(str(subtitle)) + '</div></div>',
