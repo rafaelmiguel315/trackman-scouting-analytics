@@ -541,35 +541,38 @@ def benchmark_table():
 
 
 def reference(metric, role):
-    """Combine only available 2025/2026 league rows; never invent missing seasons."""
-    table = benchmark_table()
-    if table.empty:
+    """Fail safely on unavailable or malformed benchmark data; never crash player analytics."""
+    try:
+        table = benchmark_table()
+        if table.empty:
+            return None
+        required = {"season", "level", "role", "metric", "average", "tolerance", "direction", "source"}
+        if not required.issubset(table.columns) or not table.columns.is_unique:
+            return None
+        years = ["2025", "2026"] if benchmark_season_mode == "2025 + 2026 (available data)" else [str(benchmark_season)]
+        matches = table.loc[
+            table["level"].astype("string").eq(str(benchmark_level))
+            & table["season"].astype("string").isin(years)
+            & table["role"].astype("string").str.lower().eq(str(role).lower())
+            & table["metric"].astype("string").eq(str(metric))
+        ].copy()
+        if matches.empty:
+            return None
+        matches["average"] = pd.to_numeric(matches["average"], errors="coerce")
+        matches["tolerance"] = pd.to_numeric(matches["tolerance"], errors="coerce")
+        matches = matches.dropna(subset=["average", "tolerance"])
+        matches = matches.loc[
+            matches["direction"].astype("string").str.lower().isin(["higher", "lower"])
+            & matches["source"].fillna("").astype("string").str.strip().ne("")
+        ]
+        if matches.empty or matches["direction"].astype("string").str.lower().nunique() != 1:
+            return None
+        return (float(matches["average"].mean()),
+                float(matches["tolerance"].abs().mean()),
+                str(matches.iloc[0]["direction"]).lower(),
+                "; ".join(sorted(set(matches["source"].astype(str)))))
+    except (AttributeError, KeyError, TypeError, ValueError, IndexError):
         return None
-    years = ["2025", "2026"] if benchmark_season_mode == "2025 + 2026 (available data)" else [str(benchmark_season)]
-    matches = table.loc[
-        (table["level"].astype(str) == benchmark_level)
-        & (table["season"].astype(str).isin(years))
-        & (table["role"].astype(str).str.lower() == role.lower())
-        & (table["metric"].astype(str) == metric)
-    ].copy()
-    if matches.empty:
-        return None
-    matches["average"] = pd.to_numeric(matches["average"], errors="coerce")
-    matches["tolerance"] = pd.to_numeric(matches["tolerance"], errors="coerce")
-    matches = matches.dropna(subset=["average", "tolerance"])
-    matches = matches[
-        matches["direction"].astype(str).str.lower().isin(["higher", "lower"])
-        & matches["source"].fillna("").astype(str).str.strip().ne("")
-    ]
-    if matches.empty or matches["direction"].astype(str).str.lower().nunique() != 1:
-        return None
-    # Seasonal averages are combined equally: CSV lacks denominators needed
-    # for a pooled player/pitch-weighted mean.
-    avg = float(matches["average"].mean())
-    tolerance = float(matches["tolerance"].abs().mean())
-    direction = str(matches.iloc[0]["direction"]).lower()
-    source = "; ".join(sorted(set(matches["source"].astype(str))))
-    return avg, tolerance, direction, source
 
 
 def rating(metric, role, value):
