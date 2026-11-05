@@ -1549,6 +1549,10 @@ elif page == "Pitcher Analytics":
     arsenal = pitch_rows(report_data)
     if arsenal:
         st.subheader("Full Arsenal | Pitch-by-Pitch")
+        from scouting_quick_summary import overall_summary, shape_summary
+        st.markdown("**Overall Summary**")
+        st.info(overall_summary(arsenal))
+
         mlb_frames, mlb_errors = mlb_reference_seasons()
         st.caption("MLB Statcast 2025–2026 | pitch-count-weighted reference by pitch type. Velocity colors describe velocity only, not overall pitch quality.")
         if mlb_errors:
@@ -1579,6 +1583,8 @@ elif page == "Pitcher Analytics":
                     st.caption("No demo example for this pitch type.")
             else:
                 st.caption("MLB comparison unavailable. Turn on DEMO in the sidebar to preview the colors.")
+            vertical, horizontal, separation = shape_summary(p, arsenal)
+            st.caption(vertical + " " + horizontal + " " + separation)
             cols = st.columns(5)
             for c, field, title, unit in zip(cols, ["RelSpeed","InducedVertBreak","HorzBreak","SpinRate","VertApprAngle"], ["Velocity","IVB","HB","Spin","VAA"], ["mph","in","in","rpm","°"]):
                 val = vals[field]
