@@ -13,23 +13,19 @@ def shape_summary(p, all_pitches):
     n=p["n"]
     ivb=_number(p,"InducedVertBreak")
     hb=_number(p,"HorzBreak")
-    if ivb is None:
-        vertical="Vertical: not measured."
-    elif ivb >= 10:
-        vertical=f"Vertical: {ivb:.1f} in; strong upward shape relative to gravity."
-    elif ivb <= -8:
-        vertical=f"Vertical: {ivb:.1f} in; pronounced downward shape."
-    else:
-        vertical=f"Vertical: {ivb:.1f} in; modest vertical movement."
-    if hb is None:
-        horizontal="Horizontal: not measured."
-    elif abs(hb) >= 10:
-        horizontal=f"Horizontal: {hb:+.1f} in; large side movement."
-    elif abs(hb) >= 5:
-        horizontal=f"Horizontal: {hb:+.1f} in; moderate side movement."
-    else:
-        horizontal=f"Horizontal: {hb:+.1f} in; limited side movement."
-    comparisons=[]
+    # IVB and HB are different axes. Their numerical equality is NOT a
+    # universal definition of a flat pitch, nor is IVB >= 10 a good fastball.
+    # Quality requires pitch type, handedness, arm slot, velocity and verified
+    # pitch-type benchmarks. Until those are present, describe measurements only.
+    vertical = ("Vertical: not measured." if ivb is None
+                else f"Vertical (IVB): {ivb:.1f} in; quality not graded.")
+    horizontal = ("Horizontal: not measured." if hb is None
+                  else f"Horizontal (HB): {hb:+.1f} in; quality not graded.")
+    if ivb is not None and hb is not None and "fastball" in name.lower():
+        if ivb <= 12 and abs(hb) >= 8:
+            vertical += " Low ride for a four-seam profile; check arm slot and velocity."
+            horizontal += " Noticeable arm-side movement; compare with sinker/run profile."
+        comparisons=[]
     for other in all_pitches:
         if other is p or other["name"]==name:
             continue
