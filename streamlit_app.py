@@ -1717,6 +1717,7 @@ elif page == "Pitcher Analytics":
         "pitcher_date",
     )
 
+    report_data = d.copy()  # All pitch types for the selected player/date.
     d, pitch_type = pitch_filter(
         d,
         "pitcher_pitch_type",
@@ -1775,10 +1776,11 @@ elif page == "Pitcher Analytics":
 
     movement_profile(d)
 
+    st.caption("The PDF includes the full pitch arsenal for the selected player and session dates, even when a single pitch type is selected in the chart filter.")
     download_report(
         pitcher,
         "Pitcher",
-        d,
+        report_data,
         zone_bottom,
         zone_top,
     )
