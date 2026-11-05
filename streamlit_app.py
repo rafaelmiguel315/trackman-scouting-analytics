@@ -621,58 +621,45 @@ def visual_grade(value, metric, role):
 
 
 def metric_cards(items, role):
+    """Compact, fully shaded metric cards for both hitters and pitchers."""
+    contact_colors = {
+        "Hard Contact %": ("HARD CONTACT · EV ≥90 mph", "#dc2626", "#fee2e2"),
+        "Medium Contact %": ("MEDIUM CONTACT · EV 80–<90 mph", "#a16207", "#fef3c7"),
+        "Weak Contact %": ("WEAK CONTACT · EV <80 mph", "#2563eb", "#dbeafe"),
+        "Weak Contact Generated %": ("WEAK CONTACT GENERATED · EV <80 mph", "#dc2626", "#fee2e2"),
+    }
     entries = list(items.items())
-
     for start in range(0, len(entries), 4):
-        cols = st.columns(4)
-
-        for c, (name, value) in zip(
-            cols,
-            entries[start:start + 4],
-        ):
-            c.metric(name, value)
-
+        cols = st.columns(4, gap="small")
+        for c, (name, value) in zip(cols, entries[start:start + 4]):
             try:
-                number = float(
-                    str(value)
-                    .replace("%", "")
-                    .replace(",", "")
-                )
+                number = float(str(value).replace("%", "").replace(",", ""))
             except (ValueError, TypeError):
                 number = None
-
-            label, color, avg = visual_grade(
-                number,
-                name,
-                role,
-            )
-
-            contact_colors = {
-                "Hard Contact %": ("HARD CONTACT · EV ≥90 mph", "#dc2626"),
-                "Medium Contact %": ("MEDIUM CONTACT · EV 80–<90 mph", "#eab308"),
-                "Weak Contact %": ("WEAK CONTACT · EV <80 mph", "#2563eb"),
-                "Weak Contact Generated %": ("WEAK CONTACT GENERATED · EV <80 mph", "#dc2626"),
-            }
+            label, color, avg = visual_grade(number, name, role)
             if name in contact_colors:
-                category_label, category_color = contact_colors[name]
-                c.markdown(
-                    f'<div style="border-left:6px solid {category_color};'
-                    f'background:{category_color}24;padding:10px 12px;border-radius:7px">'
-                    f'<b style="color:{category_color}">{category_label}</b>'
-                    f'<div style="font-size:0.82em">Fixed EV category · not a league grade</div></div>',
-                    unsafe_allow_html=True,
-                )
-            elif avg is None:
-                c.caption("Measured · no verified comparison")
+                detail, accent, shade = contact_colors[name]
+                subtitle = detail + " · fixed EV category"
+            elif avg is not None:
+                accent = color
+                shade = {"#dc2626": "#fee2e2", "#eab308": "#fef3c7",
+                         "#2563eb": "#dbeafe"}.get(color, "#e2e8f0")
+                subtitle = f"{label} · {'SAMPLE' if 'DEMO' in label else benchmark_level}: {avg:.1f}"
             else:
-                c.markdown(
-                    f'<div style="border-left:6px solid {color};'
-                    f'background:{color}24;padding:10px 12px;border-radius:7px">'
-                    f'<strong style="color:{color}">{label}</strong>'
-                    f' · {"SAMPLE" if demo_mode and "DEMO" in label else benchmark_level} reference: {avg:.1f}</div>',
-                    unsafe_allow_html=True,
-                )
-
+                accent, shade = "#64748b", "#e2e8f0"
+                subtitle = "Measured · no verified comparison"
+            c.markdown(
+                '<div style="background:' + shade + ';border-left:5px solid ' + accent
+                + ';border-radius:9px;padding:12px 14px;margin:4px 0 12px;min-height:115px;'
+                + 'color:#172033;box-sizing:border-box">'
+                + '<div style="font-size:13px;font-weight:600;line-height:1.3">'
+                + escape(str(name)) + '</div>'
+                + '<div style="font-size:25px;font-weight:700;line-height:1.55">'
+                + escape(str(value)) + '</div>'
+                + '<div style="font-size:11px;line-height:1.35;color:' + accent + '">'
+                + escape(str(subtitle)) + '</div></div>',
+                unsafe_allow_html=True,
+            )
 
 
 def metric_table(data, definitions):
