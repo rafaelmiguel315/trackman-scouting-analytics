@@ -1110,7 +1110,7 @@ def strike_zone_chart(data, bottom, top):
 def pdf_report(player, role, data, bottom, top):
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (
         SimpleDocTemplate,
         Paragraph,
@@ -1118,6 +1118,8 @@ def pdf_report(player, role, data, bottom, top):
         Table,
         TableStyle,
         Image,
+        KeepTogether,
+        PageBreak,
     )
 
     buffer = io.BytesIO()
@@ -1132,6 +1134,18 @@ def pdf_report(player, role, data, bottom, top):
     )
 
     styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="ReportSection", parent=styles["Heading2"], fontName="Helvetica-Bold", fontSize=12, leading=16, textColor=colors.HexColor("#17324d"), spaceBefore=12, spaceAfter=7))
+    styles.add(ParagraphStyle(name="ReportBody", parent=styles["Normal"], fontSize=9, leading=14, spaceAfter=6))
+    styles.add(ParagraphStyle(name="ReportPitch", parent=styles["Heading3"], fontSize=10, leading=14, textColor=colors.HexColor("#17324d"), spaceBefore=9, spaceAfter=4))
+    def page_footer(canvas, document):
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
+        canvas.line(38, 32, 574, 32)
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawString(38, 21, "TRACKMAN | INTERNATIONAL SCOUTING  •  DESCRIPTIVE PLAYER EVALUATION")
+        canvas.drawRightString(574, 21, f"Page {document.page}")
+        canvas.restoreState()
 
     elements = [
         Paragraph(
@@ -1464,16 +1478,37 @@ def pdf_report(player, role, data, bottom, top):
     ])
 
     if role == "Pitcher":
-        from pitch_scouting_engine import summaries
+        from pitch_scouting_engine import summaries, pitch_rows
         overall, details = summaries(data)
+        pitch_details = pitch_rows(data)
         if overall:
-            elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Pitching Assessment | Arsenal Separation &amp; Deception", styles["Heading2"])])
-            for paragraph in overall:
-                elements.extend([Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 7)])
-            elements.append(Paragraph("Pitch-by-Pitch Movement Analysis", styles["Heading2"]))
+            elements.extend([PageBreak(), Paragraph("PLAYER SCOUTING SUMMARY", styles["ReportSection"]),
+                Paragraph("What does this pitcher throw?", styles["ReportSection"]),
+                Paragraph(f"{len(data)} tracked pitches across {len(pitch_details)} pitch types. All values below describe this session, not a projection.", styles["ReportBody"])])
+            quick = [["PITCH", "USAGE", "VELOCITY", "IVB", "HORIZONTAL"]]
+            for p in pitch_details:
+                v=p["v"]
+                quick.append([p["name"], f'{p["n"]}/{len(data)}', "—" if v["RelSpeed"] is None else f'{v["RelSpeed"]:.1f} mph', "—" if v["InducedVertBreak"] is None else f'{v["InducedVertBreak"]:.1f} in', "—" if v["HorzBreak"] is None else f'{v["HorzBreak"]:.1f} in'])
+            quick_table=Table(quick,colWidths=[145,62,85,85,98],repeatRows=1)
+            quick_table.setStyle(TableStyle([
+                ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#17324d")),
+                ("TEXTCOLOR",(0,0),(-1,0),colors.white),
+                ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#f1f5f9")]),
+                ("BOTTOMPADDING",(0,0),(-1,-1),9),
+                ("TOPPADDING",(0,0),(-1,-1),9),
+                ("FONTSIZE",(0,0),(-1,-1),8),
+                ("VALIGN",(0,0),(-1,-1),"MIDDLE"),
+                ("LINEBELOW",(0,-1),(-1,-1),0.6,colors.HexColor("#cbd5e1")),
+            ]))
+            elements.extend([quick_table,Spacer(1,12),Paragraph("Arsenal separation — explained",styles["ReportSection"])])
+            for line in overall[1:]:
+                elements.append(Paragraph(escape(line),styles["ReportBody"]))
+            elements.append(Paragraph("Pitch-by-pitch explanation",styles["ReportSection"]))
             for pitch_name, paragraph in details:
-                elements.extend([Paragraph(escape(pitch_name), styles["Heading3"]), Paragraph(escape(paragraph), styles["Normal"]), Spacer(1, 8)])
-            elements.append(Paragraph("Reference scope: player averages use selected TrackMan pitches. MLB/MiLB 2025-2026 adjusted percentiles are withheld until a matched, validated reference dataset is installed. No inferred deception or effectiveness grade is presented as observed fact.", styles["Normal"]))
+                elements.append(KeepTogether([Paragraph(escape(pitch_name),styles["ReportPitch"]),Paragraph(escape(paragraph),styles["ReportBody"]),Spacer(1,6)]))
+            elements.append(Paragraph("How to read this report",styles["ReportSection"]))
+            elements.append(Paragraph("IVB describes movement relative to gravity; horizontal break describes side-to-side movement. Whiff% is misses divided by swings. A pitch with only a few observations should not receive a confident effectiveness grade. Velocity is not a complete measure of pitch quality.",styles["ReportBody"]))
+            elements.append(Paragraph("MLB references: available in the app when the official Baseball Savant download succeeds. MiLB references are not inferred from MLB. Comparisons are descriptive until matching measurement conventions are verified.",styles["ReportBody"]))
 
     if role == "Batter":
         elements.extend([Spacer(1, 16), Paragraph("Player Scouting Summary", styles["Heading1"]), Paragraph("Overall Hitting Assessment", styles["Heading2"])])
@@ -1492,7 +1527,7 @@ def pdf_report(player, role, data, bottom, top):
         for line in lines:
             elements.extend([Paragraph(escape(line), styles["Normal"]), Spacer(1, 7)])
 
-    doc.build(elements)
+    doc.build(elements, onFirstPage=page_footer, onLaterPages=page_footer)
 
     return buffer.getvalue()
 
