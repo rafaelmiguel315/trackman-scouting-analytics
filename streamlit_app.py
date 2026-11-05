@@ -1372,6 +1372,52 @@ def pdf_report(player, role, data, bottom, top):
         ),
     ))
 
+    def vector_chart(title, chart_data):
+        """ReportLab vector fallback: does not require Chrome or Kaleido."""
+        from reportlab.graphics.shapes import Drawing, Line, Circle, String, Rect
+        from reportlab.lib.colors import HexColor
+        if title.startswith("Pitch Movement"):
+            xkey, ykey = "HorzBreak", "InducedVertBreak"
+            xlo, xhi, ylo, yhi = -30., 30., -30., 30.
+        else:
+            xkey, ykey = "PlateLocSide", "PlateLocHeight"
+            xlo, xhi, ylo, yhi = -2.5, 2.5, 0., 5.
+        if xkey not in chart_data or ykey not in chart_data:
+            return None
+        xs = pd.to_numeric(chart_data[xkey], errors="coerce")
+        ys = pd.to_numeric(chart_data[ykey], errors="coerce")
+        valid = xs.notna() & ys.notna()
+        if not valid.any():
+            return None
+        drawing = Drawing(470, 350)
+        left, low, width, height = 56, 45, 360, 265
+        drawing.add(Rect(left, low, width, height, fillColor=HexColor("#f8fafc"), strokeColor=HexColor("#cbd5e1")))
+        for tick in range(6):
+            xx = left + tick * width / 5
+            yy = low + tick * height / 5
+            drawing.add(Line(xx, low, xx, low+height, strokeColor=HexColor("#e2e8f0")))
+            drawing.add(Line(left, yy, left+width, yy, strokeColor=HexColor("#e2e8f0")))
+            drawing.add(String(xx-10, low-16, f"{xlo+(xhi-xlo)*tick/5:.0f}", fontSize=9))
+            drawing.add(String(left-29, yy-3, f"{ylo+(yhi-ylo)*tick/5:.0f}", fontSize=9))
+        if title.startswith("Pitch Movement"):
+            drawing.add(Line(left+width*(-xlo)/(xhi-xlo), low, left+width*(-xlo)/(xhi-xlo), low+height, strokeColor=HexColor("#64748b"), strokeWidth=1.5))
+            drawing.add(Line(left, low+height*(-ylo)/(yhi-ylo), left+width, low+height*(-ylo)/(yhi-ylo), strokeColor=HexColor("#64748b"), strokeWidth=1.5))
+        else:
+            zl = left + width*((-0.83-xlo)/(xhi-xlo))
+            zr = left + width*((0.83-xlo)/(xhi-xlo))
+            zb = low + height*((bottom-ylo)/(yhi-ylo))
+            zt = low + height*((top-ylo)/(yhi-ylo))
+            drawing.add(Rect(zl,zb,zr-zl,zt-zb,fillColor=None,strokeColor=HexColor("#111827"),strokeWidth=2))
+        tags = chart_data["TaggedPitchType"].fillna("Unknown").astype(str) if "TaggedPitchType" in chart_data else pd.Series("Unknown", index=chart_data.index)
+        for i in chart_data.index[valid]:
+            x,y = float(xs.loc[i]),float(ys.loc[i])
+            if xlo <= x <= xhi and ylo <= y <= yhi:
+                shade = PITCH_COLORS.get(tags.loc[i], "#64748b")
+                drawing.add(Circle(left+width*(x-xlo)/(xhi-xlo),low+height*(y-ylo)/(yhi-ylo),3.2,fillColor=HexColor(shade),strokeColor=None))
+        drawing.add(String(160, 17, "Horizontal Break (in)" if title.startswith("Pitch Movement") else "Plate Location Side (ft)", fontSize=10))
+        drawing.add(String(8, 329, "IVB (in)" if title.startswith("Pitch Movement") else "Plate Height (ft)", fontSize=10))
+        return drawing
+
     for title, fig in figures:
         if fig is None:
             continue
@@ -1396,14 +1442,11 @@ def pdf_report(player, role, data, bottom, top):
             ])
 
         except Exception:
-            elements.extend([
-                Spacer(1, 10),
-                Paragraph(
-                    f"{title}: image unavailable "
-                    "on this server.",
-                    styles["Normal"],
-                ),
-            ])
+            fallback = vector_chart(title, data)
+            if fallback is not None:
+                elements.extend([Spacer(1, 15), Paragraph(title, styles["Heading2"]), fallback])
+            else:
+                elements.extend([Spacer(1, 10), Paragraph(f"{title}: insufficient chart coordinates.", styles["Normal"])])
 
     elements.extend([
         Spacer(1, 12),
