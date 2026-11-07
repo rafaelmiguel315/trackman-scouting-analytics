@@ -674,8 +674,67 @@ def import_csv(sb, file_bytes, filename):
 # LOAD HISTORICAL DATA
 # ==========================================
 
+def _merge_display_names(rows, canonical):
+    """Merge clear spelling variants by surname + similar given names.
+
+    Uses all historical rows, not just the players table. This is crucial
+    for older CSVs whose raw_data retains the original misspelling.
+    """
+    from collections import Counter, defaultdict
+    for field, role in (("Pitcher", "pitcher"), ("Batter", "batter")):
+        names = Counter(
+            " ".join(str(row[field]).split())
+            for row in rows
+            if row.get(field) is not None and str(row[field]).strip()
+        )
+        for (candidate_role, _), display in canonical.items():
+            if candidate_role == role and display not in names:
+                names[display] = 0
+        groups = defaultdict(list)
+        for name in names:
+            surname, given = _name_parts(name)
+            if surname and given:
+                groups[surname].append((name, given))
+        aliases = {}
+        for surname, members in groups.items():
+            parent = {name: name for name, _ in members}
+
+            def root(name):
+                while parent[name] != name:
+                    name = parent[name]
+                return name
+
+            for i, (a, given_a) in enumerate(members):
+                for b, given_b in members[i + 1:]:
+                    # Avoid surname-only merges; require a close first name.
+                    if (given_a == given_b or
+                            SequenceMatcher(None, given_a, given_b).ratio() >= 0.72):
+                        ra, rb = root(a), root(b)
+                        if ra != rb:
+                            parent[rb] = ra
+            clusters = defaultdict(list)
+            for name, _ in members:
+                clusters[root(name)].append(name)
+            for variants in clusters.values():
+                # Prefer established spelling, then most frequent spelling.
+                preferred = sorted(
+                    variants,
+                    key=lambda n: (-names[n], -len(n), n.casefold())
+                )[0]
+                for name in variants:
+                    aliases[_normalized_name(name)] = preferred
+        for row in rows:
+            normalized = _normalized_name(row.get(field))
+            if normalized:
+                row[field] = aliases.get(
+                    normalized,
+                    canonical.get((role, normalized), " ".join(str(row[field]).split()))
+                )
+    return rows
+
+
 def load_all(sb):
-    """Merge display names across historical CSVs without deleting pitches."""
+    """Load all CSV history and collapse clear name spelling variants."""
     canonical = _canonical_player_names(sb)
     rows = []
     offset = 0
@@ -686,17 +745,9 @@ def load_all(sb):
                  .range(offset, offset + batch - 1).execute().data)
         for item in chunk:
             raw = item.get("raw_data")
-            if not isinstance(raw, dict):
-                continue
-            row = dict(raw)
-            for field, role in (("Pitcher", "pitcher"), ("Batter", "batter")):
-                normalized = _normalized_name(row.get(field))
-                if normalized:
-                    row[field] = (canonical.get((role, normalized))
-                                  or _match_existing_name(role, row[field], canonical)
-                                  or " ".join(str(row[field]).split()))
-            rows.append(row)
+            if isinstance(raw, dict):
+                rows.append(dict(raw))
         if len(chunk) < batch:
             break
         offset += batch
-    return pd.DataFrame(rows) if rows else None
+    return pd.DataFrame(_merge_display_names(rows, canonical)) if rows else None
