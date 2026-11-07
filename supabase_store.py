@@ -5,6 +5,7 @@ import hashlib
 import io
 import math
 import unicodedata
+from difflib import SequenceMatcher
 from datetime import date
 
 import pandas as pd
@@ -191,6 +192,40 @@ def _normalized_name(name):
     name = "".join(c for c in name if not unicodedata.combining(c))
     name = "".join(c if c.isalnum() else " " for c in name.casefold())
     return " ".join(name.split()) or None
+
+
+def _name_parts(name):
+    normalized = _normalized_name(name)
+    if not normalized:
+        return None, None
+    if "," in str(name):
+        last, first = str(name).split(",", 1)
+        return _normalized_name(last), _normalized_name(first)
+    words = normalized.split()
+    return (words[-1], " ".join(words[:-1])) if len(words) > 1 else (words[0], "")
+
+
+def _match_existing_name(role, name, candidates):
+    """Same surname + very similar given name; never surname alone."""
+    surname, given = _name_parts(name)
+    if not surname or not given:
+        return None
+    matches = []
+    for (candidate_role, normalized), display in candidates.items():
+        if candidate_role != role:
+            continue
+        other_surname, other_given = _name_parts(display)
+        if surname != other_surname or not other_given:
+            continue
+        similarity = SequenceMatcher(None, given, other_given).ratio()
+        if similarity >= 0.78:
+            matches.append((similarity, display))
+    matches.sort(reverse=True)
+    if not matches:
+        return None
+    if len(matches) > 1 and matches[0][0] - matches[1][0] < 0.10:
+        return None
+    return matches[0][1]
 
 
 def _player_external_id(role, pid, name):
@@ -439,6 +474,15 @@ def import_csv(sb, file_bytes, filename):
                 player_names[key] = _text(name)
 
     canonical_names = _canonical_player_names(sb)
+    # Resolve spelling variants using surname plus close given-name match.
+    # Never merge two different players based on surname alone.
+    resolved = {}
+    for external_id, name in player_names.items():
+        role = external_id.split(":")[1]
+        canonical = canonical_names.get((role, _normalized_name(name)))
+        if canonical is None:
+            canonical = _match_existing_name(role, name, canonical_names)
+        resolved[external_id] = canonical or name
     known = _existing(
         sb,
         "players",
@@ -452,7 +496,7 @@ def import_csv(sb, file_bytes, filename):
                 sb.table("players")
                 .insert({
                     "external_id": external_id,
-                    "name": canonical_names.get((external_id.split(":")[1], _normalized_name(name)), name)
+                    "name": resolved[external_id]
                 })
                 .execute()
                 .data
@@ -648,7 +692,9 @@ def load_all(sb):
             for field, role in (("Pitcher", "pitcher"), ("Batter", "batter")):
                 normalized = _normalized_name(row.get(field))
                 if normalized:
-                    row[field] = canonical.get((role, normalized), " ".join(str(row[field]).split()))
+                    row[field] = (canonical.get((role, normalized))
+                                  or _match_existing_name(role, row[field], canonical)
+                                  or " ".join(str(row[field]).split()))
             rows.append(row)
         if len(chunk) < batch:
             break
