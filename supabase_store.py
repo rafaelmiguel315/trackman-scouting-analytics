@@ -4,6 +4,7 @@
 import hashlib
 import io
 import math
+import unicodedata
 from datetime import date
 
 import pandas as pd
@@ -182,37 +183,38 @@ def _float(row, key):
 # PLAYER IDENTIFICATION
 # ==========================================
 
-def _player_external_id(role, pid, name):
-    """
-    Use real TrackMan player IDs.
-
-    If the ID is zero or missing, use the
-    normalized player name and role.
-    """
-
-    pid = _text(pid)
+def _normalized_name(name):
     name = _text(name)
-
     if not name:
         return None
+    name = unicodedata.normalize("NFKD", name)
+    name = "".join(c for c in name if not unicodedata.combining(c))
+    name = "".join(c if c.isalnum() else " " for c in name.casefold())
+    return " ".join(name.split()) or None
 
-    invalid_ids = {
-        "0",
-        "0.0",
-        "nan",
-        "none",
-        "null",
-        "-1"
-    }
 
-    if pid and pid.lower() not in invalid_ids:
-        return f"trackman:{role}:{pid}"
+def _player_external_id(role, pid, name):
+    normalized = _normalized_name(name)
+    return f"name:{role}:{normalized}" if normalized else None
 
-    normalized = " ".join(
-        name.casefold().split()
-    )
 
-    return f"name:{role}:{normalized}"
+def _canonical_player_names(sb):
+    names = {}
+    offset = 0
+    while True:
+        chunk = (sb.table("players").select("name,external_id")
+                 .order("created_at").range(offset, offset + 499).execute().data)
+        for p in chunk:
+            key = _normalized_name(p.get("name"))
+            ext = str(p.get("external_id") or "")
+            role = ("pitcher" if ":pitcher:" in ext else
+                    "batter" if ":batter:" in ext else None)
+            if role and key:
+                names.setdefault((role, key), p["name"])
+        if len(chunk) < 500:
+            break
+        offset += 500
+    return names
 
 
 def _existing(sb, table, col, values):
@@ -436,6 +438,7 @@ def import_csv(sb, file_bytes, filename):
             if key:
                 player_names[key] = _text(name)
 
+    canonical_names = _canonical_player_names(sb)
     known = _existing(
         sb,
         "players",
@@ -449,7 +452,7 @@ def import_csv(sb, file_bytes, filename):
                 sb.table("players")
                 .insert({
                     "external_id": external_id,
-                    "name": name
+                    "name": canonical_names.get((external_id.split(":")[1], _normalized_name(name)), name)
                 })
                 .execute()
                 .data
@@ -628,45 +631,26 @@ def import_csv(sb, file_bytes, filename):
 # ==========================================
 
 def load_all(sb):
-    """
-    Load saved TrackMan records and restore
-    their original dashboard column names.
-    """
-
+    """Merge display names across historical CSVs without deleting pitches."""
+    canonical = _canonical_player_names(sb)
     rows = []
     offset = 0
     batch = 500
-
     while True:
-        chunk = (
-            sb.table("pitches")
-            .select("raw_data")
-            .order("created_at")
-            .order("id")
-            .range(
-                offset,
-                offset + batch - 1
-            )
-            .execute()
-            .data
-        )
-
-        rows.extend(
-            x["raw_data"]
-            for x in chunk
-            if isinstance(
-                x.get("raw_data"),
-                dict
-            )
-        )
-
+        chunk = (sb.table("pitches").select("raw_data")
+                 .order("created_at").order("id")
+                 .range(offset, offset + batch - 1).execute().data)
+        for item in chunk:
+            raw = item.get("raw_data")
+            if not isinstance(raw, dict):
+                continue
+            row = dict(raw)
+            for field, role in (("Pitcher", "pitcher"), ("Batter", "batter")):
+                normalized = _normalized_name(row.get(field))
+                if normalized:
+                    row[field] = canonical.get((role, normalized), " ".join(str(row[field]).split()))
+            rows.append(row)
         if len(chunk) < batch:
             break
-
         offset += batch
-
-    return (
-        pd.DataFrame(rows)
-        if rows
-        else None
-    )
+    return pd.DataFrame(rows) if rows else None
