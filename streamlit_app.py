@@ -63,6 +63,10 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.01em;}
 if "trackman_data" not in st.session_state:
     st.session_state.trackman_data = load_all(sb)
 
+if st.sidebar.button("Refresh Historical Database", help="Reload all saved CSV records and merge player names across sessions."):
+    st.session_state.trackman_data = load_all(sb)
+    st.rerun()
+
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def mlb_reference_seasons():
