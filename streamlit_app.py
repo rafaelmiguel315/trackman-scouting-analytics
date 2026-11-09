@@ -441,6 +441,7 @@ def batting_rates(d):
     zone_contacts = int(
         (d["_zone"] & d["_contact"]).sum()
     )
+    located_zone_pitches = int(d["_zone"].sum())
 
     ev_count = int(d["_valid_ev"].sum())
 
@@ -448,6 +449,9 @@ def batting_rates(d):
         "Swing %": pct(swings, len(d)),
         "Whiff %": pct(whiffs, swings),
         "Contact %": pct(contacts, swings),
+        "Decision Making %": pct(zone_swings, located_zone_pitches),
+        "Contact Ability %": pct(contacts, swings),
+        "Hitting Ability %": pct(int(d["_inplay"].sum()), swings),
         "Chase %": pct(
             outside_swings,
             outside,
@@ -703,6 +707,9 @@ DEMO_GRADE_RULES = {
     "Batter": {
         "Swing %": (45, 8, "neutral"),
         "Whiff %": (25, 7, "lower"),
+        "Decision Making %": (0, 0, "neutral"),
+        "Contact Ability %": (0, 0, "neutral"),
+        "Hitting Ability %": (0, 0, "neutral"),
         "Contact %": (75, 7, "higher"),
         "Chase %": (30, 7, "lower"),
         "Z-Contact %": (85, 7, "higher"),
@@ -798,16 +805,15 @@ def metric_table(data, definitions):
 def hitting_stats(data, bottom, top):
     d = classify(data, bottom, top)
     rates = batting_rates(d)
-    pa = pa_results(d)
-
     return {
         "Pitches Seen": fmt(len(d)),
-        "K": fmt(pa["K"]),
-        "BB": fmt(pa["BB"]),
-        **{
-            name: fmt(value, True)
-            for name, value in rates.items()
-        },
+        "Decision Making %": fmt(rates["Decision Making %"], True),
+        "Contact Ability %": fmt(rates["Contact Ability %"], True),
+        "Hitting Ability %": fmt(rates["Hitting Ability %"], True),
+        "Chase %": fmt(rates["Chase %"], True),
+        "Hard Contact %": fmt(rates["Hard Contact %"], True),
+        "Medium Contact %": fmt(rates["Medium Contact %"], True),
+        "Weak Contact %": fmt(rates["Weak Contact %"], True),
     }
 
 
@@ -856,7 +862,9 @@ def hitting_headers(data, bottom, top):
     )
 
     st.caption(
-        "Contact includes fouls. "
+        "Decision Making = swings on pitches in the zone / all located pitches in the zone. "
+        "Contact Ability = fouls + balls in play / all swings. "
+        "Hitting Ability = balls in play / all swings (provisional proxy, not a validated hitting grade). "
         "Hard Contact: EV >= 90 mph. "
         "Medium Contact: 80 to <90 mph. "
         "Weak Contact: EV <80 mph. "
