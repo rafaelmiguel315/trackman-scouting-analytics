@@ -855,21 +855,41 @@ def pitching_stats(data, bottom, top):
     }
 
 
+def hitting_ability_explanations(data, bottom, top):
+    """Show formulas with this player's actual numerator and denominator."""
+    d = classify(data, bottom, top)
+    swings = int(d["_swing"].sum())
+    zone_pitches = int(d["_zone"].sum())
+    zone_swings = int((d["_zone"] & d["_swing"]).sum())
+    contacts = int(d["_contact"].sum())
+    inplay = int(d["_inplay"].sum())
+    def line(label, numerator, denominator, description):
+        value = f"{100 * numerator / denominator:.1f}%" if denominator else "N/A"
+        return (label, f"{numerator} / {denominator} × 100 = {value}" if denominator else
+                f"{numerator} / {denominator} = N/A (no eligible pitches)",
+                description)
+    return [
+        line("Decision Making %", zone_swings, zone_pitches,
+             "Swings at pitches inside the estimated strike zone divided by all tracked pitches inside that zone. This measures zone-swing rate, not overall decision quality."),
+        line("Contact Ability %", contacts, swings,
+             "Foul balls plus balls put in play divided by all swings. Fouls count as contact; swings and misses do not."),
+        line("Hitting Ability %", inplay, swings,
+             "Balls put in play divided by all swings. Provisional ball-in-play proxy; not a validated overall hitting-ability score."),
+    ]
+
+
 def hitting_headers(data, bottom, top):
     metric_cards(
         hitting_stats(data, bottom, top),
         "Batter",
     )
 
-    st.caption(
-        "Decision Making = swings on pitches in the zone / all located pitches in the zone. "
-        "Contact Ability = fouls + balls in play / all swings. "
-        "Hitting Ability = balls in play / all swings (provisional proxy, not a validated hitting grade). "
-        "Hard Contact: EV >= 90 mph. "
-        "Medium Contact: 80 to <90 mph. "
-        "Weak Contact: EV <80 mph. "
-        "Zone rates use the approximate strike zone."
-    )
+    st.markdown("**How these percentages are calculated**")
+    for label, calculation, description in hitting_ability_explanations(data, bottom, top):
+        st.caption(f"**{label}:** {calculation}. {description}")
+    st.caption("Strike-zone boundaries are estimated from the configured zone. "
+               "Hard Contact: EV ≥90 mph; Medium: 80–<90 mph; Weak: <80 mph.")
+
 
 
 def pitching_headers(data, bottom, top):
@@ -1313,6 +1333,12 @@ def pdf_report(player, role, data, bottom, top):
         elements.append(Paragraph("HITTING SNAPSHOT",styles["SimpleHead"]))
         for name,value in list(stats.items())[:8]:
             elements.append(Paragraph(f"<b>{escape(str(name))}:</b> {escape(str(value))}",styles["SimpleText"]))
+        elements.append(Paragraph("HOW THE THREE KEY PERCENTAGES ARE CALCULATED", styles["SimpleHead"]))
+        for label, calculation, description in hitting_ability_explanations(data, bottom, top):
+            elements.append(KeepTogether([
+                Paragraph(f"<b>{escape(label)}:</b> {escape(calculation)}", styles["SimpleText"]),
+                Paragraph(escape(description), styles["SimpleSmall"]),
+            ]))
         ev=numeric(data,"ExitSpeed").dropna()
         if len(ev):
             elements.append(Paragraph(f"<b>Average exit speed:</b> {ev.mean():.1f} mph from {len(ev)} recorded contacts.",styles["SimpleText"]))
