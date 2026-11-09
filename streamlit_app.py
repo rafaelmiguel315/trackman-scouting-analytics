@@ -884,6 +884,13 @@ def hitting_headers(data, bottom, top):
         "Batter",
     )
 
+    st.markdown("**Historical MLB plate-discipline context (approximate)**")
+    st.caption(
+        "Zone Swing (Decision Making proxy): ~65% | Contact Ability (contact per swing): ~80%. "
+        "These are broad historical reference points, NOT verified MLB 2025–2026 averages "
+        "and NOT MiLB level benchmarks. Hitting Ability has no comparable validated league average. "
+        "No performance grade is assigned from these approximations."
+    )
     st.markdown("**How these percentages are calculated**")
     for label, calculation, description in hitting_ability_explanations(data, bottom, top):
         st.caption(f"**{label}:** {calculation}. {description}")
@@ -1334,6 +1341,12 @@ def pdf_report(player, role, data, bottom, top):
         elements.append(Paragraph("HITTING SNAPSHOT",styles["SimpleHead"]))
         for name,value in list(stats.items())[:8]:
             elements.append(Paragraph(f"<b>{escape(str(name))}:</b> {escape(str(value))}",styles["SimpleText"]))
+        elements.append(Paragraph("HISTORICAL MLB CONTEXT (APPROXIMATE)", styles["SimpleHead"]))
+        elements.append(Paragraph(
+            "Zone Swing (Decision Making proxy): about 65%; Contact Ability (contact per swing): about 80%. "
+            "Broad historical context only, not verified MLB 2025-2026 or MiLB averages; "
+            "no league comparison is available for the provisional Hitting Ability metric.",
+            styles["SimpleSmall"]))
         elements.append(Paragraph("HOW THE THREE KEY PERCENTAGES ARE CALCULATED", styles["SimpleHead"]))
         for label, calculation, description in hitting_ability_explanations(data, bottom, top):
             elements.append(KeepTogether([
