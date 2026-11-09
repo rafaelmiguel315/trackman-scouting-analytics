@@ -887,7 +887,8 @@ def hitting_headers(data, bottom, top):
     st.markdown("**How these percentages are calculated**")
     for label, calculation, description in hitting_ability_explanations(data, bottom, top):
         st.caption(f"**{label}:** {calculation}. {description}")
-    st.caption("Strike-zone boundaries are estimated from the configured zone. "
+    st.caption( "Strike-zone boundaries use MLB 2026 ABS height proportions; " 
+               "TrackMan plate location is an approximation of the ABS mid-plate crossing. "
                "Hard Contact: EV ≥90 mph; Medium: 80–<90 mph; Weak: <80 mph.")
 
 
@@ -1437,27 +1438,27 @@ if benchmark_table().empty:
         "Ratings will show No benchmark."
     )
 
-zone_bottom = st.sidebar.number_input(
-    "Strike Zone Bottom (ft)",
-    min_value=0.0,
-    max_value=5.0,
-    value=1.50,
-    step=0.05,
+st.sidebar.markdown("**MLB 2026 ABS Strike Zone**")
+st.sidebar.caption(
+    "17-inch plate width; bottom = 27% and top = 53.5% of batter height. "
+    "ABS measures at the middle of home plate. Height must be entered "
+    "for the specific hitter; the default below is illustrative."
 )
-
-zone_top = st.sidebar.number_input(
-    "Strike Zone Top (ft)",
-    min_value=0.0,
-    max_value=6.0,
-    value=3.50,
-    step=0.05,
+batter_height_in = st.sidebar.number_input(
+    "Batter Height (inches) — for zone analysis",
+    min_value=48.0,
+    max_value=90.0,
+    value=72.0,
+    step=1.0,
+    help="Enter the measured height of the selected batter. 72 inches is a placeholder, NOT the player's verified height.",
 )
-
-if zone_top <= zone_bottom:
-    st.error(
-        "Strike zone top must exceed bottom."
-    )
-    st.stop()
+zone_bottom = round(0.27 * batter_height_in / 12, 4)
+zone_top = round(0.535 * batter_height_in / 12, 4)
+st.sidebar.caption(
+    f"Calculated ABS zone: {zone_bottom:.2f}–{zone_top:.2f} ft. "
+    "These TrackMan plate coordinates approximate the ABS mid-plate crossing; "
+    "not an official ABS ruling."
+)
 
 pages = [
     "Overview",
