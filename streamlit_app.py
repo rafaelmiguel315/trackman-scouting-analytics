@@ -52,6 +52,24 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.01em;}
   .block-container {padding-left: 1rem; padding-right: 1rem;}
   .scout-title {font-size: 1.5rem;}
 }
+/* Colorado-inspired scouting dashboard: purple navigation, clean data surfaces. */
+:root {--rockies-purple:#6f3fa6;--rockies-deep:#251535;--rockies-silver:#c5c9d1;}
+.stApp {background:linear-gradient(180deg,#f6f3fa 0%,#ffffff 280px);color:#1f2330;}
+[data-testid="stSidebar"] {background:linear-gradient(180deg,#21152d,#352044) !important;border-right:1px solid #543568;}
+[data-testid="stSidebar"] * {color:#f4eef9;}
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {color:#eee6f5 !important;}
+[data-testid="stSidebar"] [data-baseweb="select"] *,[data-testid="stSidebar"] input {color:#1e2030 !important;}
+[data-testid="stSidebar"] [data-testid="stRadio"] label {border-radius:9px;padding:5px 8px;}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:hover {background:rgba(180,136,226,.16);}
+h1,h2,h3 {color:#2a173c !important;}
+[data-testid="stPlotlyChart"],[data-testid="stDataFrame"] {background:#fff;box-shadow:0 3px 16px rgba(40,20,60,.06);border:1px solid #e7dfed;}
+[data-testid="stDownloadButton"] button {background:#6f3fa6 !important;color:#fff !important;border:0 !important;padding:9px 17px;}
+[data-testid="stDownloadButton"] button:hover {background:#51287f !important;}
+.scout-header {background:linear-gradient(110deg,#17121d,#40235d 70%,#694094);padding:25px 28px !important;border:1px solid #6c4b85 !important;border-radius:16px;color:#fff;box-shadow:0 10px 28px rgba(46,20,75,.16);}
+.scout-header .scout-title {color:#fff !important;font-size:clamp(1.65rem,2.6vw,2.3rem);}
+.scout-header .scout-eyebrow {color:#d7b7f5;}
+.scout-header .scout-subtitle {color:#e1d4eb;}
+@media (max-width:850px) {.scout-header {padding:17px !important;}}
 </style>
 <div class="scout-header">
   <div class="scout-eyebrow">International Scouting · Video & Data</div>
