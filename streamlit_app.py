@@ -56,9 +56,18 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.01em;}
 :root {--rockies-purple:#6f3fa6;--rockies-deep:#251535;--rockies-silver:#c5c9d1;}
 .stApp {background:linear-gradient(180deg,#f6f3fa 0%,#ffffff 280px);color:#1f2330;}
 [data-testid="stSidebar"] {background:linear-gradient(180deg,#21152d,#352044) !important;border-right:1px solid #543568;}
-[data-testid="stSidebar"] * {color:#f4eef9;}
+[data-testid="stSidebar"] {color:#f4eef9;}
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p {color:#eee6f5 !important;}
-[data-testid="stSidebar"] [data-baseweb="select"] *,[data-testid="stSidebar"] input {color:#1e2030 !important;}
+[data-testid="stSidebar"] [data-baseweb="select"],
+[data-testid="stSidebar"] [data-baseweb="input"],
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input {background:#fff !important;color:#251535 !important;border-radius:9px;}
+[data-testid="stSidebar"] [data-baseweb="select"] *,
+[data-testid="stSidebar"] [data-baseweb="input"] *,
+[data-testid="stSidebar"] [data-testid="stNumberInput"] input {color:#251535 !important;}
+[data-testid="stSidebar"] [data-baseweb="select"] svg {fill:#251535 !important;color:#251535 !important;}
+[data-testid="stSidebar"] button[kind="secondary"] {background:#fff !important;color:#251535 !important;border:1px solid #d8c9e8 !important;}
+[data-testid="stSidebar"] button[kind="secondary"] * {color:#251535 !important;}
+[data-testid="stSidebar"] [role="switch"][aria-checked="true"] {background:#8854bf !important;}
 [data-testid="stSidebar"] [data-testid="stRadio"] label {border-radius:9px;padding:5px 8px;}
 [data-testid="stSidebar"] [data-testid="stRadio"] label:hover {background:rgba(180,136,226,.16);}
 h1,h2,h3 {color:#2a173c !important;}
