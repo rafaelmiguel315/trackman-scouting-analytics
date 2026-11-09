@@ -70,6 +70,24 @@ h3 {font-size: 1.12rem !important; letter-spacing: -.01em;}
 [data-testid="stSidebar"] [role="switch"][aria-checked="true"] {background:#8854bf !important;}
 [data-testid="stSidebar"] [data-testid="stRadio"] label {border-radius:9px;padding:5px 8px;}
 [data-testid="stSidebar"] [data-testid="stRadio"] label:hover {background:rgba(180,136,226,.16);}
+/* Navigation radio text must remain legible on the dark purple sidebar. */
+[data-testid="stSidebar"] [data-testid="stRadio"] label,
+[data-testid="stSidebar"] [data-testid="stRadio"] label p,
+[data-testid="stSidebar"] [data-testid="stRadio"] label span,
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] p,
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radiogroup"] span {
+  color:#ffffff !important;
+  opacity:1 !important;
+  -webkit-text-fill-color:#ffffff !important;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] label:has(input:checked) {
+  background:rgba(183,140,226,.22) !important;
+  border-left:3px solid #c6a0ef;
+}
+[data-testid="stSidebar"] [data-testid="stRadio"] [role="radio"][aria-checked="true"] {
+  accent-color:#9a66ce !important;
+}
+
 h1,h2,h3 {color:#2a173c !important;}
 [data-testid="stPlotlyChart"],[data-testid="stDataFrame"] {background:#fff;box-shadow:0 3px 16px rgba(40,20,60,.06);border:1px solid #e7dfed;}
 [data-testid="stDownloadButton"] button {background:#6f3fa6 !important;color:#fff !important;border:0 !important;padding:9px 17px;}
