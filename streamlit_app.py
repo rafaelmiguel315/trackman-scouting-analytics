@@ -502,7 +502,9 @@ def batting_rates(d):
     # when PitchCall is missing/unrecognized for any tracked pitch.
     valid_calls = int(d["_classified_call"].sum())
     complete_calls = valid_calls == len(d)
-    contact_rate = pct(contacts, swings) if complete_calls and swings >= 20 else None
+    # Contact Ability is observed contact per swing, not a projection.
+    # Require complete pitch tagging; expose the sample size separately.
+    contact_rate = pct(contacts, swings) if complete_calls and swings > 0 else None
 
     return {
         "Swing %": pct(swings, valid_calls) if complete_calls else None,
