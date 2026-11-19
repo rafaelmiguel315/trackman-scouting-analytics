@@ -404,6 +404,14 @@ def classify(data, zone_bottom, zone_top):
         d["_foul"] | d["_inplay"]
     )
 
+    # TrackMan files without valid pitch-call tagging cannot support
+    # swing/contact rates. Never interpret missing calls as non-swings.
+    d["_classified_call"] = (
+        d["_swing"]
+        | calls.isin(CALLED_STRIKES)
+        | calls.isin(BALL_CALLS)
+    )
+
     d["_strike"] = (
         d["_whiff"]
         | d["_foul"]
@@ -490,12 +498,18 @@ def batting_rates(d):
 
     ev_count = int(d["_valid_ev"].sum())
 
+    # Do not publish misleading 100% contact scores on tiny samples or
+    # when PitchCall is missing/unrecognized for any tracked pitch.
+    valid_calls = int(d["_classified_call"].sum())
+    complete_calls = valid_calls == len(d)
+    contact_rate = pct(contacts, swings) if complete_calls and swings >= 20 else None
+
     return {
-        "Swing %": pct(swings, len(d)),
-        "Whiff %": pct(whiffs, swings),
-        "Contact %": pct(contacts, swings),
+        "Swing %": pct(swings, valid_calls) if complete_calls else None,
+        "Whiff %": pct(whiffs, swings) if complete_calls and swings else None,
+        "Contact %": contact_rate,
         "Decision Making %": pct(zone_swings, located_zone_pitches),
-        "Contact Ability %": pct(contacts, swings),
+        "Contact Ability %": contact_rate,
         "Hitting Ability %": pct(int(d["_inplay"].sum()), swings),
         "Chase %": pct(
             outside_swings,
@@ -852,6 +866,8 @@ def hitting_stats(data, bottom, top):
     rates = batting_rates(d)
     return {
         "Pitches Seen": fmt(len(d)),
+        "Tracked Swings": fmt(int(d["_swing"].sum())),
+        "Unclassified Pitch Calls": fmt(int((~d["_classified_call"]).sum())),
         "Decision Making %": fmt(rates["Decision Making %"], True),
         "Contact Ability %": fmt(rates["Contact Ability %"], True),
         "Hitting Ability %": fmt(rates["Hitting Ability %"], True),
