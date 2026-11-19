@@ -190,41 +190,63 @@ def _normalized_name(name):
         return None
     name = unicodedata.normalize("NFKD", name)
     name = "".join(c for c in name if not unicodedata.combining(c))
-    name = "".join(c if c.isalnum() else " " for c in name.casefold())
-    return " ".join(name.split()) or None
+    # TrackMan may append a numeric player ID to the displayed name.
+    words = ["".join(c for c in word if c.isalnum())
+             for word in name.casefold().replace(",", " ").split()]
+    words = [word for word in words if word and not word.isdigit()]
+    return " ".join(words) or None
 
 
 def _name_parts(name):
     normalized = _normalized_name(name)
     if not normalized:
         return None, None
-    if "," in str(name):
-        last, first = str(name).split(",", 1)
-        return _normalized_name(last), _normalized_name(first)
     words = normalized.split()
-    return (words[-1], " ".join(words[:-1])) if len(words) > 1 else (words[0], "")
+    if len(words) == 1:
+        return words[0], ""
+    if "," in str(name):
+        return words[0], " ".join(words[1:])
+    return words[-1], " ".join(words[:-1])
+
+
+def _name_aliases(name):
+    """Accept 'Jean Bastardo', 'Bastardo, Jean' and numeric-ID variants."""
+    surname, given = _name_parts(name)
+    if not surname:
+        return set()
+    return {f"{surname}|{given}", f"{given}|{surname}"} if given else {surname}
 
 
 def _match_existing_name(role, name, candidates):
-    """Same surname + very similar given name; never surname alone."""
+    """Match by full name regardless of order; surname only if unambiguous."""
     surname, given = _name_parts(name)
-    if not surname or not given:
+    if not surname:
         return None
     matches = []
-    for (candidate_role, normalized), display in candidates.items():
+    for (candidate_role, _), display in candidates.items():
         if candidate_role != role:
             continue
         other_surname, other_given = _name_parts(display)
-        if surname != other_surname or not other_given:
+        if not other_surname:
             continue
-        similarity = SequenceMatcher(None, given, other_given).ratio()
-        if similarity >= 0.78:
-            matches.append((similarity, display))
+        if given and other_given:
+            if _name_aliases(name) & _name_aliases(display):
+                score = 1.0
+            elif surname == other_surname:
+                score = SequenceMatcher(None, given, other_given).ratio()
+            else:
+                continue
+            if score >= 0.78:
+                matches.append((score, display))
+        elif surname == other_surname or surname in _normalized_name(display).split():
+            matches.append((0.8, display))
     matches.sort(reverse=True)
     if not matches:
         return None
-    if len(matches) > 1 and matches[0][0] - matches[1][0] < 0.10:
-        return None
+    # Never silently combine different players sharing a surname.
+    if len({display for _, display in matches}) > 1:
+        if matches[0][0] - matches[1][0] < 0.10:
+            return None
     return matches[0][1]
 
 
@@ -546,6 +568,13 @@ def import_csv(sb, file_bytes, filename):
             str(k): _clean(v)
             for k, v in row.items()
         }
+        for role, field, id_field in (
+            ("pitcher", "Pitcher", "PitcherId"),
+            ("batter", "Batter", "BatterId")
+        ):
+            key = _player_external_id(role, row.get(id_field), row.get(field))
+            if key in resolved:
+                raw[field] = resolved[key]
 
         pitcher_key = _player_external_id(
             "pitcher",
@@ -679,61 +708,40 @@ def import_csv(sb, file_bytes, filename):
 # ==========================================
 
 def _merge_display_names(rows, canonical):
-    """Merge clear spelling variants by surname + similar given names.
+    """Consolidate aliases by role, ignoring numeric IDs and name order.
 
-    Uses all historical rows, not just the players table. This is crucial
-    for older CSVs whose raw_data retains the original misspelling.
+    A surname-only record is merged only when one full-name candidate exists.
     """
-    from collections import Counter, defaultdict
+    from collections import Counter
     for field, role in (("Pitcher", "pitcher"), ("Batter", "batter")):
-        names = Counter(
-            " ".join(str(row[field]).split())
-            for row in rows
-            if row.get(field) is not None and str(row[field]).strip()
-        )
+        counts = Counter(str(row[field]).strip() for row in rows
+                         if _text(row.get(field)))
         for (candidate_role, _), display in canonical.items():
-            if candidate_role == role and display not in names:
-                names[display] = 0
-        groups = defaultdict(list)
-        for name in names:
+            if candidate_role == role:
+                counts.setdefault(display, 0)
+        full_names = [n for n in counts if _name_parts(n)[1]]
+        preferred = {}
+        for name in counts:
             surname, given = _name_parts(name)
-            if surname and given:
-                groups[surname].append((name, given))
-        aliases = {}
-        for surname, members in groups.items():
-            parent = {name: name for name, _ in members}
-
-            def root(name):
-                while parent[name] != name:
-                    name = parent[name]
-                return name
-
-            for i, (a, given_a) in enumerate(members):
-                for b, given_b in members[i + 1:]:
-                    # Avoid surname-only merges; require a close first name.
-                    if (given_a == given_b or
-                            SequenceMatcher(None, given_a, given_b).ratio() >= 0.72):
-                        ra, rb = root(a), root(b)
-                        if ra != rb:
-                            parent[rb] = ra
-            clusters = defaultdict(list)
-            for name, _ in members:
-                clusters[root(name)].append(name)
-            for variants in clusters.values():
-                # Prefer established spelling, then most frequent spelling.
-                preferred = sorted(
-                    variants,
-                    key=lambda n: (-names[n], -len(n), n.casefold())
-                )[0]
-                for name in variants:
-                    aliases[_normalized_name(name)] = preferred
+            if not surname:
+                continue
+            if given:
+                options = [n for n in full_names
+                           if _name_aliases(n) & _name_aliases(name)]
+                if not options:
+                    options = [name]
+            else:
+                options = [n for n in full_names
+                           if surname in _normalized_name(n).split()]
+                if len({_name_aliases(n).__iter__().__next__() for n in options}) > 1:
+                    options = []
+            if options:
+                preferred[name] = sorted(options, key=lambda n:
+                    (-counts[n], -len(n), n.casefold()))[0]
         for row in rows:
-            normalized = _normalized_name(row.get(field))
-            if normalized:
-                row[field] = aliases.get(
-                    normalized,
-                    canonical.get((role, normalized), " ".join(str(row[field]).split()))
-                )
+            original = row.get(field)
+            if _text(original) in preferred:
+                row[field] = preferred[_text(original)]
     return rows
 
 
