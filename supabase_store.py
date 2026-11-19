@@ -383,10 +383,11 @@ def import_csv(sb, file_bytes, filename):
             "de columnas duplicados."
         )
 
+    # Portable TrackMan exports may omit PitchUID.
+    # Date and Pitcher remain required for every import.
     required = {
         "Date",
-        "Pitcher",
-        "PitchUID"
+        "Pitcher"
     }
 
     missing = required - set(df.columns)
@@ -540,7 +541,7 @@ def import_csv(sb, file_bytes, filename):
 
     records = []
 
-    for _, row in df.iterrows():
+    for row_index, row in df.iterrows():
         raw = {
             str(k): _clean(v)
             for k, v in row.items()
@@ -571,8 +572,11 @@ def import_csv(sb, file_bytes, filename):
             "batter_id": (
                 batter["id"] if batter else None
             ),
-            "source_pitch_id": _text(
-                row.get("PitchUID")
+            # Preserve real TrackMan IDs when supplied; otherwise create a
+            # deterministic file-scoped ID unique to each pitch row.
+            "source_pitch_id": (
+                _text(row.get("PitchUID"))
+                or f"portable:{digest}:{row_index + 1}"
             ),
             "pitch_number": (
                 int(pitch_no)
